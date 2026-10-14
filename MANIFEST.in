@@ -1,0 +1,7 @@
+include LICENSE NOTICE README.md CONTRIBUTING.md SECURITY.md .gitignore
+recursive-include docs *.md
+recursive-include examples *.json *.example
+recursive-include tests *.py
+recursive-include iphone/tests *.py *.ndjson *.json
+recursive-include third_party LICENSE NOTICE *.patch
+recursive-include scripts *.py *.sh

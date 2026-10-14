@@ -1,0 +1,16 @@
+{
+  "remote_host": "archive-server",
+  "remote_project": "/srv/personal-context-bridge",
+  "remote_data_dir": "/srv/private-context",
+  "calendar_ids": [],
+  "reminder_ids": [],
+  "mailbox_urls": [],
+  "all_calendars": true,
+  "all_reminders": false,
+  "all_contacts": false,
+  "all_mailboxes": false,
+  "all_messages": false,
+  "all_notes": false,
+  "from_date": "2020-01-01",
+  "to_date": "2030-12-31"
+}

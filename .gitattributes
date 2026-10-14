@@ -1,0 +1,2 @@
+# Preserve upstream patch whitespace for reproducible git apply.
+third_party/**/*.patch -whitespace

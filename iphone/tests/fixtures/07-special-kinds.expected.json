@@ -1,0 +1,14 @@
+{
+  "scenario": "The four series-style sample kinds",
+  "notes": "A heartbeat series (beat offsets as [seconds, precededByGap] pairs), an ECG (classification plus a microvolt trace), a State of Mind log (iOS 18), and a medication dose event (iOS 26). Each is a sample with a UUID and its own kind-specific payload object.",
+  "status": 200,
+  "response": {
+    "accepted": 4,
+    "deleted": 0,
+    "duplicates": 0,
+    "routePoints": 0,
+    "seriesPoints": 0,
+    "aggregateSamples": 0,
+    "activitySummaries": 0
+  }
+}

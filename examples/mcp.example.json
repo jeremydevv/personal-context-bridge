@@ -1,0 +1,34 @@
+{
+  "mcpServers": {
+    "personal-context": {
+      "command": "/absolute/project/.venv/bin/python",
+      "args": ["-m", "personal_context.mcp_server"],
+      "env": {"PERSONAL_CONTEXT_DB": "/private/runtime/context.sqlite3", "PERSONAL_CONTEXT_KEY_FILE": "/private/runtime/archive.key"}
+    },
+    "apple-messages": {
+      "command": "/absolute/project/.venv/bin/python",
+      "args": ["-m", "personal_context.source_mcp_server", "--source", "message"],
+      "env": {"PERSONAL_CONTEXT_DB": "/private/runtime/context.sqlite3", "PERSONAL_CONTEXT_KEY_FILE": "/private/runtime/archive.key"}
+    },
+    "canvas": {
+      "command": "/absolute/project/.venv/bin/python",
+      "args": ["-m", "personal_context.canvas_mcp_server"],
+      "env": {"PERSONAL_CONTEXT_DB": "/private/runtime/context.sqlite3", "PERSONAL_CONTEXT_KEY_FILE": "/private/runtime/archive.key"}
+    },
+    "health": {
+      "command": "/absolute/project/.venv/bin/python",
+      "args": ["-m", "iphone_context.read_mcp", "--source", "health"],
+      "env": {"IPHONE_HEALTH_DB": "/private/runtime/health.sqlite3", "IPHONE_ARCHIVE_KEY_FILE": "/private/runtime/archive.key"}
+    },
+    "travel": {
+      "command": "/absolute/project/.venv/bin/python",
+      "args": ["-m", "iphone_context.read_mcp", "--source", "travel"],
+      "env": {"IPHONE_TRAVEL_DB": "/private/runtime/travel.sqlite3", "IPHONE_ARCHIVE_KEY_FILE": "/private/runtime/archive.key"}
+    },
+    "obsidian": {
+      "command": "/absolute/project/.venv/bin/python",
+      "args": ["-m", "personal_context.obsidian_mcp_server"],
+      "env": {"OBSIDIAN_VAULT_ROOT": "/private/mounted-vaults", "OBSIDIAN_VAULTS": "Notes,Projects", "OBSIDIAN_WRITE_ENABLED": "0"}
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "scenario": "Aggregate buckets, daily activity summaries, and a profile snapshot",
+  "notes": "Two aggregate buckets (one with a value and temporal contexts, one explicit-null 'empty bucket'), two activity summaries (one with localDate and temporal context, one legacy-style with only the epoch-ms date and null rings, keyed by the UTC date of 'date', 2024-06-11), and a profile line that clears name and email while setting date of birth and sex. Aggregates and summaries are upserts; a replay overwrites the same rows. 'state' is the stored ring rows after this fixture; fixture 08 replaces the first.",
+  "status": 200,
+  "response": {
+    "accepted": 0,
+    "deleted": 0,
+    "duplicates": 0,
+    "routePoints": 0,
+    "seriesPoints": 0,
+    "aggregateSamples": 2,
+    "activitySummaries": 2
+  },
+  "state": {
+    "activitySummaries": [
+      {"localDate": "2024-06-10", "moveKcal": 420.5, "moveGoalKcal": 600.0, "exerciseMin": 25.0, "exerciseGoalMin": 30.0, "standHours": 9.0, "standGoalHours": 12.0, "moveMode": 0, "moveTimeMin": null, "moveTimeGoalMin": null},
+      {"localDate": "2024-06-11", "moveKcal": null, "moveGoalKcal": 600.0, "exerciseMin": null, "exerciseGoalMin": 30.0, "standHours": null, "standGoalHours": 12.0, "moveMode": 1, "moveTimeMin": 0.0, "moveTimeGoalMin": 30.0}
+    ]
+  }
+}

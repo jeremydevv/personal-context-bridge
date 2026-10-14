@@ -1,0 +1,14 @@
+{
+  "scenario": "Legacy header (no schemaVersion, no optional counts) re-sending a known sample UUID",
+  "notes": "A pre-versioning client: the header carries neither schemaVersion nor clientVersion nor any count beyond deletionCount; absent counts are 0 and the version is 1. The first sample repeats, in lower case, the UUID fixture 01 stored in upper case, under a new batch ID: UUIDs compare case-insensitively, so it is a duplicate and a no-op (never an overwrite, never a second row); the second is new. Applied to an empty store instead, the response would be accepted 2, duplicates 0.",
+  "status": 200,
+  "response": {
+    "accepted": 1,
+    "deleted": 0,
+    "duplicates": 1,
+    "routePoints": 0,
+    "seriesPoints": 0,
+    "aggregateSamples": 0,
+    "activitySummaries": 0
+  }
+}

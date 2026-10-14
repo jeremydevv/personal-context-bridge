@@ -1,0 +1,243 @@
+diff --git a/swift/Sources/MailCLI/EnvelopeIndex.swift b/swift/Sources/MailCLI/EnvelopeIndex.swift
+index 85e9bfa..5069689 100644
+--- a/swift/Sources/MailCLI/EnvelopeIndex.swift
++++ b/swift/Sources/MailCLI/EnvelopeIndex.swift
+@@ -422,6 +422,17 @@ final class EnvelopeIndex {
+         return try query(sql, selectedColumnBinds + [.text(messageIDHeader)])
+     }
+ 
++    /// One exact local copy, including messages whose RFC Message-ID is reused.
++    func findMessage(localRowID: Int64) throws -> [String: Any]? {
++        let sql = """
++            SELECT \(Self.messageColumns)
++            \(Self.messageJoins)
++            WHERE m.ROWID = ? AND m.deleted = 0
++            LIMIT 1
++            """
++        return try query(sql, [.int(localRowID)]).first
++    }
++
+     /// (to, cc) recipients for a message ROWID. type 0 = to, 1 = cc.
+     func recipients(messageRowID: Int64) throws -> (to: [[String: Any]], cc: [[String: Any]]) {
+         let rows = try query("""
+diff --git a/swift/Sources/MailCLI/MailCLI.swift b/swift/Sources/MailCLI/MailCLI.swift
+index a0debe1..c1fd70b 100644
+--- a/swift/Sources/MailCLI/MailCLI.swift
++++ b/swift/Sources/MailCLI/MailCLI.swift
+@@ -13,6 +13,7 @@ struct MailCLI: AsyncParsableCommand {
+             ListAccounts.self,
+             ListMailboxes.self,
+             ListMessages.self,
++            ExportMessages.self,
+             GetMessage.self,
+             SearchMessages.self,
+             UpdateMessage.self,
+@@ -149,6 +150,14 @@ func outputJSON(_ value: Any) {
+     }
+ }
+ 
++func outputJSONLine(_ value: Any) throws {
++    let data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
++    guard let string = String(data: data, encoding: .utf8) else {
++        throw CLIError.invalidInput("Could not encode export record")
++    }
++    print(string)
++}
++
+ /// Escape a string for safe interpolation into JXA string literals (single or double quoted).
+ /// Escapes backslashes first, then quotes and control characters.
+ func escapeForJXA(_ s: String) -> String {
+@@ -1066,6 +1075,9 @@ struct ListMessages: AsyncParsableCommand {
+     @Option(name: .long, help: "Mailbox name (default: INBOX)")
+     var mailbox: String = "INBOX"
+ 
++    @Option(name: .long, help: "Exact local mailbox row ID from mailboxes --engine sqlite")
++    var mailboxRowid: Int64?
++
+     @Option(name: .long, help: "Account name (searches all accounts if omitted)")
+     var account: String?
+ 
+@@ -1084,6 +1096,9 @@ struct ListMessages: AsyncParsableCommand {
+     func run() async throws {
+         let config = pimOptions.loadConfig()
+         try checkMailEnabled(config: config)
++        if mailboxRowid != nil && engine == .jxa {
++            throw CLIError.invalidInput("--mailbox-rowid requires the SQLite engine")
++        }
+ 
+         // `--since` exists for cursor-driven consumers. Newest-first answers "what just
+         // arrived"; a consumer working through a backlog needs "what have I not processed
+@@ -1103,12 +1118,14 @@ struct ListMessages: AsyncParsableCommand {
+                 outputJSON(try SQLiteEngine().messages(
+                     mailbox: mailbox,
+                     account: account,
++                    mailboxRowID: mailboxRowid,
+                     limit: limit,
+                     filter: filter,
+                     sinceEpoch: sinceEpoch,
+                     oldestFirst: sinceEpoch != nil))
+                 return
+             } catch {
++                if mailboxRowid != nil { throw error }
+                 try rethrowFatalFastPathError(engine, error)
+             }
+         }
+@@ -1210,6 +1227,58 @@ struct ListMessages: AsyncParsableCommand {
+     }
+ }
+ 
++struct ExportMessages: AsyncParsableCommand {
++    static let configuration = CommandConfiguration(
++        commandName: "export",
++        abstract: "Stream exact read-only mailbox copies as newline-delimited JSON"
++    )
++
++    @OptionGroup var pimOptions: PIMOptions
++
++    @Option(name: .long, help: "Exact local mailbox row ID from mailboxes --engine sqlite")
++    var mailboxRowid: Int64
++
++    @Option(name: .long, help: "Maximum messages; refuse a scan that reaches this value")
++    var limit: Int = 50000
++
++    func run() async throws {
++        let config = pimOptions.loadConfig()
++        try checkMailEnabled(config: config)
++        guard mailboxRowid > 0 && limit > 1 else {
++            throw CLIError.invalidInput("Invalid mailbox row ID or limit")
++        }
++        let sqlite = try SQLiteEngine()
++        let listing = try sqlite.messages(mailbox: "", account: nil,
++                                          mailboxRowID: mailboxRowid, limit: limit, filter: nil)
++        guard let summaries = listing["messages"] as? [[String: Any]], summaries.count < limit else {
++            throw CLIError.invalidInput("Mailbox export reached its limit")
++        }
++        try outputJSONLine(["type": "header", "mailboxRowid": mailboxRowid,
++                            "count": summaries.count,
++                            "totalInMailbox": listing["totalInMailbox"] ?? 0])
++        var missingBodies = 0
++        for summary in summaries {
++            guard let localId = summary["localId"] as? Int64, localId > 0 else {
++                throw CLIError.invalidInput("Message missing local ID")
++            }
++            do {
++                let result = try sqlite.get(localId: localId, includeSource: false)
++                guard let message = result["message"] as? [String: Any] else {
++                    throw CLIError.invalidInput("Message detail missing")
++                }
++                try outputJSONLine(["type": "message", "contentAvailable": true,
++                                    "message": message])
++            } catch EnvelopeIndexError.notAvailable {
++                missingBodies += 1
++                try outputJSONLine(["type": "message", "contentAvailable": false,
++                                    "message": summary])
++            }
++        }
++        try outputJSONLine(["type": "footer", "exported": summaries.count,
++                            "missingBodies": missingBodies])
++    }
++}
++
+ struct GetMessage: AsyncParsableCommand {
+     static let configuration = CommandConfiguration(
+         commandName: "get",
+@@ -1219,7 +1288,10 @@ struct GetMessage: AsyncParsableCommand {
+     @OptionGroup var pimOptions: PIMOptions
+ 
+     @Option(name: .long, help: "RFC 2822 message ID")
+-    var id: String
++    var id: String?
++
++    @Option(name: .long, help: "Exact local message row ID from messages --engine sqlite")
++    var localId: Int64?
+ 
+     @Option(name: .long, help: "Mailbox name hint (speeds up lookup)")
+     var mailbox: String?
+@@ -1236,6 +1308,17 @@ struct GetMessage: AsyncParsableCommand {
+     func run() async throws {
+         let config = pimOptions.loadConfig()
+         try checkMailEnabled(config: config)
++        guard (id != nil) != (localId != nil) else {
++            throw CLIError.invalidInput("Provide exactly one of --id or --local-id")
++        }
++        if let localId {
++            guard localId > 0 && engine != .jxa else {
++                throw CLIError.invalidInput("--local-id requires a positive ID and the SQLite engine")
++            }
++            outputJSON(try SQLiteEngine().get(localId: localId, includeSource: includeSource))
++            return
++        }
++        let id = id!
+ 
+         if engine != .jxa {
+             do {
+diff --git a/swift/Sources/MailCLI/SQLiteEngine.swift b/swift/Sources/MailCLI/SQLiteEngine.swift
+index 3dba7f8..be58edb 100644
+--- a/swift/Sources/MailCLI/SQLiteEngine.swift
++++ b/swift/Sources/MailCLI/SQLiteEngine.swift
+@@ -114,6 +114,7 @@ struct SQLiteEngine {
+         let senderName = (row["sender_comment"] as? String ?? "")
+             .trimmingCharacters(in: .whitespaces)
+         var dict: [String: Any] = [
++            "localId": row["rowid"] as? Int64 ?? 0,
+             "messageId": stripAngleBrackets(row["message_id"] as? String ?? ""),
+             "sender": formatAddress(address: senderAddress, comment: senderName),
+             // The Envelope Index stores these separately and Mail's own recipient lists are
+@@ -168,6 +169,9 @@ struct SQLiteEngine {
+             [
+                 "name": mailbox.name,
+                 "account": accountDisplayName(mailbox.accountUUID),
++                "accountId": mailbox.accountUUID,
++                "localMailboxId": mailbox.rowid,
++                "mailboxUrl": mailbox.url,
+                 "unreadCount": mailbox.unreadCount,
+                 "messageCount": mailbox.totalCount,
+             ]
+@@ -178,12 +182,21 @@ struct SQLiteEngine {
+     func messages(
+         mailbox: String,
+         account: String?,
++        mailboxRowID: Int64? = nil,
+         limit: Int,
+         filter: String?,
+         sinceEpoch: Double? = nil,
+         oldestFirst: Bool = false
+     ) throws -> [String: Any] {
+-        let refs = try resolveMailboxes(account: account, mailbox: mailbox)
++        let refs: [MailboxRef]
++        if let mailboxRowID {
++            guard let exact = mailboxByRowID[mailboxRowID] else {
++                throw EnvelopeIndexError.notFound("Mailbox row ID not found")
++            }
++            refs = [exact]
++        } else {
++            refs = try resolveMailboxes(account: account, mailbox: mailbox)
++        }
+         guard !refs.isEmpty else {
+             throw EnvelopeIndexError.notFound("Mailbox not found: \(mailbox)")
+         }
+@@ -284,9 +297,23 @@ struct SQLiteEngine {
+                 }
+             }
+         }
+-        guard let row = bestRow, let rowid = row["rowid"] as? Int64 else {
++        guard let row = bestRow else {
+             throw EnvelopeIndexError.notFound("Message not found: \(id)")
+         }
++        return try messageDetail(row: row, includeSource: includeSource)
++    }
++
++    func get(localId: Int64, includeSource: Bool) throws -> [String: Any] {
++        guard let row = try index.findMessage(localRowID: localId) else {
++            throw EnvelopeIndexError.notFound("Local message ID not found")
++        }
++        return try messageDetail(row: row, includeSource: includeSource)
++    }
++
++    private func messageDetail(row: [String: Any], includeSource: Bool) throws -> [String: Any] {
++        guard let rowid = row["rowid"] as? Int64 else {
++            throw EnvelopeIndexError.notFound("Local message ID missing")
++        }
+         // Physical, not logical: the payload reports the mailbox the message is labeled into,
+         // but the .emlx sits under the store that owns the row.
+         guard let physicalMailbox = physicalMailboxRef(forRow: row),

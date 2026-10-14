@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>org.personalcontext.personal-context-fast-sync</string>
+<key>ProgramArguments</key><array>
+<string>/absolute/project/.venv/bin/personal-context</string><string>fast-sync</string>
+<string>--config</string><string>/absolute/private/apple.json</string>
+</array>
+<key>EnvironmentVariables</key><dict>
+<key>PATH</key><string>/absolute/user/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
+<key>PERSONAL_CONTEXT_REMOTE_KEY_FILE</key><string>/absolute/server/runtime/archive.key</string>
+</dict>
+<key>StartInterval</key><integer>3600</integer>
+</dict></plist>

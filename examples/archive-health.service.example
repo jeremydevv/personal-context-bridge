@@ -1,0 +1,7 @@
+[Unit]
+Description=Check private archive freshness
+
+[Service]
+Type=oneshot
+EnvironmentFile=/absolute/private/archive.env
+ExecStart=/absolute/project/.venv/bin/personal-context health --db /absolute/private/context.sqlite3 --fail-on-stale --fail-on-low-space

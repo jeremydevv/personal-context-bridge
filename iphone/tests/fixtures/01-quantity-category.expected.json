@@ -1,0 +1,14 @@
+{
+  "scenario": "Quantity and category samples in one batch",
+  "notes": "Two heart-rate samples (one with explicit nulls and metadata, one with temporal contexts) and one sleep-stage category sample. As the app sends them, UUIDs (and the batchID) are upper-case and timestamps are fractional epoch milliseconds; the second heart-rate sample keeps integer ones, which are equally valid. Fixtures 04 and 05 refer to the first sample's UUID in lower and mixed case. The header type names the dominant type only; receivers register types from the sample lines.",
+  "status": 200,
+  "response": {
+    "accepted": 3,
+    "deleted": 0,
+    "duplicates": 0,
+    "routePoints": 0,
+    "seriesPoints": 0,
+    "aggregateSamples": 0,
+    "activitySummaries": 0
+  }
+}

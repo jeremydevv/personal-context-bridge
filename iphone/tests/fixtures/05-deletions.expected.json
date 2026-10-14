@@ -1,0 +1,14 @@
+{
+  "scenario": "Deletion tombstones for one stored and one unknown sample",
+  "notes": "The first tombstone names, in mixed case, the sample fixture 01 stored in upper case, and removes it (deleted 1); the second was never stored and is a silent no-op. 'deleted' counts rows actually removed, so applied to an empty store the response would be deleted 0.",
+  "status": 200,
+  "response": {
+    "accepted": 0,
+    "deleted": 1,
+    "duplicates": 0,
+    "routePoints": 0,
+    "seriesPoints": 0,
+    "aggregateSamples": 0,
+    "activitySummaries": 0
+  }
+}

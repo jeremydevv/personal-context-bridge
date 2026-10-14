@@ -1,0 +1,14 @@
+{
+  "scenario": "Header-only probe batch",
+  "notes": "What the app sends to test a connection when the receiver has no GET /v1/capabilities: every count is 0, reason is manual, and the type is the label \"probe\", not a type identifier, which the receiver must accept without interpreting. Any 2xx means the receiver is reachable, the token is right, and batches are accepted.",
+  "status": 200,
+  "response": {
+    "accepted": 0,
+    "deleted": 0,
+    "duplicates": 0,
+    "routePoints": 0,
+    "seriesPoints": 0,
+    "aggregateSamples": 0,
+    "activitySummaries": 0
+  }
+}

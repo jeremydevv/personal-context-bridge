@@ -47,7 +47,7 @@ package yet; install from this repository.
 | Apple Mail | Mailbox inventory, headers, recipient details and available bodies | Local Mail index via patched Apple PIM; Full Disk Access; SSH key for transfer |
 | Apple Messages | Messages, participants, attachment metadata and optionally file bytes | Full Disk Access to the local Messages database/files; SSH key for transfer |
 | Apple Notes | Titles, available bodies, folders and timestamps | macOS Automation access to Notes; SSH key for transfer |
-| Canvas | Student courses, assignments, submissions/grades, announcements and files; optional PDF/DOCX text | User-provided Canvas API bearer token in a private local file |
+| Canvas | Student courses, assignments, submissions/grades, announcements, files, and Inbox conversations; optional PDF/DOCX text | User-provided Canvas API bearer token in a private local file |
 | Apple Health | Selected HealthKit samples, workouts/routes, activity summaries and aggregates | HealthKit read permission in the PulsHealth iPhone app; bearer token for receiver uploads |
 | OwnTracks | Location coordinates, timestamps and travel event metadata | iOS location permission; HTTP Basic authentication with a private generated password |
 | Google Maps Timeline | Visits, activities and paths from an on-phone JSON export | User-provided export file; no live Google OAuth connection |

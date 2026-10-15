@@ -16,7 +16,10 @@ and keep a recovery copy of keys in a secure place separate from public code.
 The Mac reads plaintext data from Apple applications. Retry spools also contain
 plaintext batches until delivered. Google exports are plaintext source files.
 Source records exist in memory during processing; an MCP client receives selected
-plaintext tool results. Local storage does not prevent those results from being
+plaintext tool results. Canvas Inbox messages are collected as private
+conversation records and become available through Canvas Inbox/search/read tools;
+connecting that MCP may send selected message content to the client/model provider.
+Local storage does not prevent those results from being
 sent to the client/model provider. Read that provider's data policies before
 connecting sensitive sources. Obsidian uses the encryption of your own mounted
 filesystem; its note history is plaintext within that mount.

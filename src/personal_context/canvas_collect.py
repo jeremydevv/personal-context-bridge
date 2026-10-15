@@ -42,6 +42,18 @@ class CanvasClient:
 
     def close(self): self.http.close()
 
+    def get(self, path):
+        url = urljoin(self.base + '/', path)
+        if self._origin(url) != self.origin:
+            raise ValueError('Canvas request must stay on the configured origin')
+        response = self.http.get(url, headers={'Authorization': 'Bearer ' + self.token})
+        if response.status_code != 200:
+            raise RuntimeError('Canvas API read failed (HTTP %d)' % response.status_code)
+        item = response.json()
+        if not isinstance(item, dict):
+            raise ValueError('Canvas returned an invalid record')
+        return item
+
     def _origin(self, url):
         parts = urlsplit(url)
         if parts.scheme != 'https' or parts.username or parts.password or not parts.hostname:
@@ -149,6 +161,43 @@ def collect_batches(client, account, *, download_files=False):
                     'title':title,'body':body,'start':item.get('due_at') if kind=='assignment' else item.get('posted_at',item.get('created_at')),
                     'payload':payload})
             batch(kind,scope,records)
+
+    # Conversation detail reads must explicitly disable Canvas's default
+    # auto-mark-as-read behavior so collection remains read-only.
+    for scope_name, scope_param in (('inbox', ''), ('archived', '&scope=archived')):
+        conversations = client.pages('/api/v1/conversations?per_page=100' + scope_param)
+        records = []
+        for conversation in conversations:
+            cid = identifier(conversation)
+            detail = client.get('/api/v1/conversations/%s?auto_mark_as_read=false' % cid)
+            messages = []
+            bodies = []
+            raw_messages = detail.get('messages') or []
+            if not isinstance(raw_messages, list):
+                raise ValueError('Canvas returned an invalid conversation message list')
+            for message in raw_messages:
+                if not isinstance(message, dict):
+                    raise ValueError('Canvas returned an invalid conversation message')
+                message_body = plain(message.get('body'))
+                if message_body:
+                    bodies.append(message_body)
+                messages.append({key: message.get(key) for key in
+                                 ('id', 'created_at', 'author_id', 'generated')
+                                 if key in message})
+                messages[-1]['body'] = message_body
+            payload = {key: detail.get(key) for key in (
+                'workflow_state', 'last_message_at', 'message_count') if key in detail}
+            payload['participants'] = [
+                {key: participant.get(key) for key in ('id', 'name', 'full_name') if key in participant}
+                for participant in (detail.get('participants') or []) if isinstance(participant, dict)]
+            # Store only message fields needed for reading; Canvas may include
+            # attachment URLs or other account-specific fields in its response.
+            payload['messages'] = messages
+            records.append({'id':'canvas:'+account+':conversation:'+cid,
+                'title':detail.get('subject') or conversation.get('subject') or '(no subject)',
+                'body':'\n\n'.join(bodies), 'start':detail.get('last_message_at') or
+                conversation.get('last_message_at'), 'payload':payload})
+        batch('conversation', account + ':' + scope_name, records)
     return batches
 
 

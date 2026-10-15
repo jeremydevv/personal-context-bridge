@@ -143,9 +143,9 @@ class Store:
     def _validate(batch):
         if batch.get("schema") != 1 or batch.get("source") not in ("apple-pim", "apple-local", "canvas-lms"):
             raise ValueError("unsupported batch schema or source")
-        if batch.get("kind") not in ("calendar", "reminder", "contact", "mail", "message", "note", "inventory", "canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file"):
+        if batch.get("kind") not in ("calendar", "reminder", "contact", "mail", "message", "note", "inventory", "canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file", "canvas_conversation"):
             raise ValueError("unsupported record kind")
-        if (batch["source"] == "canvas-lms") != (batch["kind"] in ("canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file")):
+        if (batch["source"] == "canvas-lms") != (batch["kind"] in ("canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file", "canvas_conversation")):
             raise ValueError("Canvas records require the Canvas source")
         if batch["kind"] == "inventory" and (batch["source"] != "apple-pim" or batch.get("scope") not in ("calendar", "reminder", "mail")):
             raise ValueError("unsupported source inventory")
@@ -516,7 +516,7 @@ class Store:
         now = now or datetime.now(timezone.utc)
         cutoff = (now - timedelta(hours=stale_after_hours)).isoformat().replace("+00:00", "Z")
         sources = {}
-        for kind in ("calendar", "reminder", "contact", "mail", "message", "note", "canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file"):
+        for kind in ("calendar", "reminder", "contact", "mail", "message", "note", "canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file", "canvas_conversation"):
             active = self.db.execute("SELECT COUNT(*) FROM records WHERE kind=? AND deleted=0", (kind,)).fetchone()[0]
             scopes, oldest, newest, stale = self.db.execute("""
                 SELECT COUNT(*),MIN(collected_at),MAX(collected_at),

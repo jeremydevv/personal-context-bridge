@@ -100,11 +100,18 @@ archive environment variables above:
 ```
 
 The collector reads student courses, submission/grade details included in
-assignments, announcements, and file metadata. It follows complete pagination
+assignments, announcements, file metadata, and Canvas Inbox conversations
+(including archived conversations). Conversation message bodies and participant
+names are stored in the encrypted archive. Conversation detail requests explicitly
+disable Canvas's automatic mark-as-read behavior, so collection does not change
+Inbox state. Use `canvas_inbox` to list threads, `search_canvas` to search them,
+and `get_canvas_record` with `kind="conversation"` to read a full thread. This is
+Canvas Inbox data, separate from Apple Mail. It follows complete pagination
 before marking snapshots complete. API failures abort before ingest. File
 extraction failures are recorded as unavailable. Canvas API tokens are sent only
 to the configured origin; signed file redirects receive no token on another origin.
-An empty course inventory retires that account's archived course-linked records.
+An empty course inventory retires that account's archived course-linked records;
+inbox and archived conversation snapshots are tracked separately.
 
 The original Mac deployment's separate Canvas collector is not distributed here;
 this portable collector provides the same archive record kinds and MCP queries.

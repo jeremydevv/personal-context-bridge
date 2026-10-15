@@ -67,7 +67,7 @@ class QueryService:
         start, end = _utc_timestamp(start), _utc_timestamp(end)
         if start >= end:
             raise ValueError("timeline start must precede end")
-        if kind is not None and kind not in ("calendar", "reminder", "contact", "mail", "message", "note", "canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file"):
+        if kind is not None and kind not in ("calendar", "reminder", "contact", "mail", "message", "note", "canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file", "canvas_conversation"):
             raise ValueError("invalid timeline kind")
         def run(store):
             rows = store.timeline(start, end, kind, limit)
@@ -193,6 +193,7 @@ class QueryService:
             "canvas_assignment_last_synced_at": store.last_sync("canvas_assignment"),
             "canvas_announcement_last_synced_at": store.last_sync("canvas_announcement"),
             "canvas_file_last_synced_at": store.last_sync("canvas_file"),
+            "canvas_conversation_last_synced_at": store.last_sync("canvas_conversation"),
         })
 
     def health(self):

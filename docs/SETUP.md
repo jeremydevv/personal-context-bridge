@@ -230,3 +230,119 @@ Local generated daily summaries are optional. The episode builder defaults to
 loopback Ollama at port 11434, accepts only that local endpoint, and preserves
 source citations. Generated summaries are unverified; confirm important details
 against the source records. No external model key is included.
+
+## Native Calendar and Reminders writes through a Mac
+
+Ubuntu stores approved creates in a SQLCipher outbox and delivers them over SSH
+when the Mac is awake. Existing Apple accounts, calendars, and lists are used.
+There is no new calendar/account to add on the phone. Calendar and Reminders
+account sync and notifications remain Apple's responsibility.
+
+### One-time Mac setup
+
+1. Install the pinned Apple PIM revision documented above. Its `calendar-cli`
+   and `reminder-cli` must support `auth-status`, `config show/init`, and `create`
+   including the Reminder due-alert option. Install this package with Python
+   3.11+ on the Mac; the receiver uses only its standard library.
+2. From a **local Terminal on the Mac**, run `calendar-cli list` and
+   `reminder-cli lists`. Grant full Calendar and Reminders access when prompted.
+   The SSH process must also report `authorized` for both via `auth-status`.
+   Terminal permission alone may not cover a headless SSH process. If macOS
+   requests a different responsible application, authorize it locally or use an
+   authorized app wrapper; do not bypass TCC or claim headless permission works
+   without checking it.
+3. Merge the Calendar/Reminders sections of
+   `examples/mac-pim-executor.example.json` into the Mac's private Apple PIM
+   configuration (`~/.config/apple-pim/config.json`). Keep both domains in `all`
+   mode. Preserve unrelated configuration. Existing `default_calendar` and
+   `default_reminder_list` are respected; otherwise the existing system defaults
+   are used, selected by EventKit even if several accounts share the same name.
+   Explicit names must be unique; IDs resolve duplicate names. Missing,
+   ambiguous, or read-only destinations fail before create. No containers are
+   ever created by this receiver. Broad writer access does not change which
+   sources the separate archive collector reads.
+4. Install a private fixed executable, for example `/private/bin/apple-write-receiver`:
+
+   ```sh
+   #!/bin/sh
+   export PERSONAL_CONTEXT_APPLE_RECEIPTS_DB=/private/runtime/receipts.sqlite3
+   export PERSONAL_CONTEXT_CALENDAR_CLI=/absolute/apple-pim/calendar-cli
+   export PERSONAL_CONTEXT_REMINDER_CLI=/absolute/apple-pim/reminder-cli
+   exec /absolute/project/.venv/bin/python -m personal_context.mac_pim_executor "$@"
+   ```
+
+   If using the upstream authorized Apple PIM Helper app, add
+   `export PERSONAL_CONTEXT_APPLE_PIM_HELPER="/absolute/Apple PIM Helper.app"`
+   to this executable. The receiver launches it through Launch Services with
+   literal arguments and private temporary output files. It must already have
+   Calendar and Reminders permissions. Its CLI directory must match the installed
+   binaries (the helper defaults to `~/.local/bin`). Check health through this
+   same receiver; direct CLI authorization may differ from the app's.
+
+   Keep its config, runtime directory and receipt journal private. The journal
+   stores job IDs, hashes and safe receipts, never titles or notes. It must be
+   retained across receiver updates. Do not remove it to retry an uncertain job.
+   Test `apple-write-receiver --health` over the **same SSH identity** Ubuntu uses.
+   It must return `{"ready": true}`. This health check does not prompt for access.
+   Prefer a dedicated SSH key restricted to this receiver (with a fixed forced
+   command wrapper accepting only `--health` and `--apply-stdin`), no forwarding,
+   no PTY. Keep its host key pinned in Ubuntu's known_hosts.
+
+### Ubuntu worker and chat tools
+
+Copy `examples/apple-writes.env.example` outside the source checkout, mode 0600,
+and set the actual fixed SSH target and absolute receiver executable. Use the
+same `PERSONAL_CONTEXT_KEY_FILE` and `PERSONAL_CONTEXT_APPLE_WRITE_DB` for both
+MCP processes and the worker. The key must be a private, nonsymlink 32-byte file.
+Keep the DB in a private runtime directory, outside source control.
+
+Install the example user systemd service and timer as
+`personal-context-apple-write-worker.service` and `.timer`, replacing paths. Add
+your key-unlock service dependency and `ConditionPathExists` if the key is only
+available after login. Run `systemctl --user daemon-reload` and
+`systemctl --user enable --now personal-context-apple-write-worker.timer`.
+The timer checks every minute; a process lock prevents overlapping workers.
+
+With tools still disabled, verify synthetic creates through the receiver into
+existing destinations, then cancellation, identical request retries, offline
+preflight and ambiguous delivery handling. Test notification behavior on your
+actual devices. Only then set `PERSONAL_CONTEXT_APPLE_WRITE_ENABLED=1` in both
+Calendar and Reminders MCP environments and restart/reconnect those surfaces.
+Invalid optional write configuration leaves archive reads available.
+
+Available tools:
+
+- Calendar: `queue_apple_calendar_event` (title, exact start/end, notes, optional
+  alarm and existing calendar).
+- Reminders: `queue_apple_reminder` (title, optional exact due time, notes, optional
+  alarm and existing list).
+- Both: `apple_write_job_status`, `pending_apple_write_jobs`, and
+  `cancel_apple_write_job`. These access the same queue across chats.
+
+Approve the exact fields in chat; no manual action is needed per item afterward.
+Dates require ISO-8601 with seconds and an offset, such as
+`2026-11-01T15:00:00-05:00`. Native Reminders has minute precision; reminder
+due timestamps must have seconds `00` and no fractional seconds. Repeated local
+hours during daylight-saving fallback are rejected before creation because the
+pinned Reminder CLI cannot preserve which occurrence was approved. Use a new
+request key for each intended new item and
+reuse it only for an identical retry. Changed content under an existing key
+fails. The host's tool approval policy must allow the queue call; annotations
+and tool descriptions do not replace that host policy.
+
+`queued` means saved on Ubuntu, not written into Apple. `completed` requires a
+matching Mac receipt with an item ID. An offline preflight leaves the job queued;
+a timeout, disconnect, or invalid receipt after delivery starts produces
+`needs_review` and is never retried automatically. A worker crash likewise leaves
+uncertain jobs for review. A cancelled queued job is never dispatched. Once it
+is delivering it cannot be cancelled by this queue. Investigate `needs_review`
+against the native app and Mac receipt journal before requesting a new create.
+
+Timed Reminders receive the native due-time alert by default. A positive early
+alarm shifts the time Reminders **displays and fires** to the earlier time; it is
+not an extra alert alongside a later displayed due time. The receipt returns
+`alert_at`, `late`, `alert_late`, and a safe `earlier_alarm_display` warning.
+If the Mac was offline, the approved original due time is retained. Creation
+and an item ID do not prove sync to the phone or delivery of a notification.
+These tools create items only; edit/delete/complete and list/calendar management
+are outside this release.

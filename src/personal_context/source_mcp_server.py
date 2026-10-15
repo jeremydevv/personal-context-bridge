@@ -97,6 +97,9 @@ def run(argv=None):
         mcp.tool(name="force_refresh_apple_" + LABELS[source].lower(),
                  annotations=write_request)(force_refresh)
 
+    from .apple_write_mcp import register as register_apple_writes
+    register_apple_writes(mcp, source)
+
     if source == "mail" and os.environ.get("PERSONAL_CONTEXT_MAIL_SEND_ENABLED") == "1":
         from .mail_send import cancel_email, email_status, pending_emails, queue_email
         send_write = ToolAnnotations(readOnlyHint=False, destructiveHint=False,

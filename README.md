@@ -105,3 +105,13 @@ exercised by CI. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Original bridge code is [MIT licensed](LICENSE). Adapted PulsHealth components
 retain [Apache-2.0 licensing](third_party/pulshealth/LICENSE); see [NOTICE](NOTICE).
+
+### Native Calendar and Reminders creation
+
+Optional chat tools queue approved creates on Ubuntu and deliver them to the Mac
+when it is available. They use existing native calendars/lists and require
+one-time macOS permissions. Writes are disabled by default. Jobs can be checked
+or cancelled across chats; uncertain delivery is never automatically retried.
+A Mac that is off cannot create an item or guarantee an on-time alert. See
+[Mac queued writes setup](docs/SETUP.md#native-calendar-and-reminders-writes-through-a-mac)
+for tools, native alarm behavior, and rollout requirements.

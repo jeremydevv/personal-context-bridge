@@ -1,0 +1,20 @@
+{
+  "calendars": {
+    "enabled": true,
+    "mode": "all",
+    "items": []
+  },
+  "reminders": {
+    "enabled": true,
+    "mode": "all",
+    "items": []
+  },
+  "contacts": {
+    "enabled": false,
+    "mode": "all",
+    "items": []
+  },
+  "mail": {
+    "enabled": false
+  }
+}

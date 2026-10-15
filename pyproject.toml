@@ -19,6 +19,7 @@ dev = ["build>=1.2,<2"]
 messages = ["pytypedstream==0.1.0"]
 
 [project.scripts]
+personal-context-apple-writes = "personal_context.apple_write_worker:main"
 personal-context-setup = "personal_context.onboarding:main"
 personal-context-canvas = "personal_context.canvas_collect:main"
 personal-context = "personal_context.cli:entrypoint"

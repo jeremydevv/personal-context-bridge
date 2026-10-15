@@ -1,0 +1,11 @@
+[Unit]
+Description=Deliver approved native Apple Calendar and Reminders jobs
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/personal-context-bridge/apple-writes.env
+ExecStart=/absolute/project/.venv/bin/python -m personal_context.apple_write_worker
+UMask=0077
+NoNewPrivileges=true
+TimeoutStartSec=25min

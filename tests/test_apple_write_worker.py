@@ -2,11 +2,22 @@ import json
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
+from unittest.mock import patch
 from test_apple_write_queue import QueueTests, EVENT
 from personal_context import apple_write_queue as q
 from personal_context import apple_write_worker as w
 
 class WorkerTests(QueueTests):
+    def test_live_inspection_accepts_long_notes_but_bounds_output(self):
+        value = {'success': True, 'item': {'notes': 'x' * 20000}}
+        with patch.object(w, 'transport_config', return_value=('user@mac.example', '/private/bin/receiver')):
+            result = w.read_native('reminder', {'operation': 'inspect', 'item_id': 'id'},
+                ssh_runner=lambda *a, **kw: SimpleNamespace(returncode=0, stdout=json.dumps(value)))
+            self.assertEqual(result, value)
+            result = w.read_native('reminder', {'operation': 'inspect', 'item_id': 'id'},
+                ssh_runner=lambda *a, **kw: SimpleNamespace(returncode=0, stdout='x' * (1024*1024 + 1)))
+            self.assertFalse(result['success'])
+
     def process(self, runner):
         return w.process_queued(target='user@mac.example', remote_command='/private/bin/apple-receiver', queue_options=self.opts, ssh_runner=runner)
 

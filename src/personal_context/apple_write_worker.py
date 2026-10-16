@@ -21,18 +21,18 @@ def transport_config(target=None, remote_command=None):
     return target, remote_command
 
 
-def _ssh(args, *, input, timeout):
+def _ssh(args, *, input, timeout, output_limit=16384):
     # Limit captured output without retaining arbitrary SSH diagnostics or item text.
     with tempfile.TemporaryFile(mode='w+') as output:
         result = subprocess.run(args,input=input,text=True,stdout=output,
                                 stderr=subprocess.DEVNULL,timeout=timeout)
         output.seek(0)
-        result.stdout = output.read(16385)
+        result.stdout = output.read(output_limit + 1)
         return result
 
 
-def _decode(result):
-    if result.returncode or len(result.stdout)>16384: raise ValueError('invalid receiver response')
+def _decode(result, limit=16384):
+    if result.returncode or len(result.stdout)>limit: raise ValueError('invalid receiver response')
     value = json.loads(result.stdout)
     if not isinstance(value,dict): raise ValueError('invalid receiver response')
     return value
@@ -54,6 +54,21 @@ def _receipt(raw, job_id):
     if state not in ('failed','needs_review') or set(raw) != {'job_id','state','error_code'} or raw['error_code'] not in queue.ERRORS:
         raise ValueError('invalid failure receipt')
     return raw
+
+
+def read_native(kind, fields, *, ssh_runner=None):
+    """Fixed read-only receiver endpoint; unavailable Mac does not enqueue a read."""
+    target, command = transport_config()
+    args = ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
+            '-o', 'ConnectTimeout=5', '-o', 'ConnectionAttempts=1', target, command, '--read-stdin']
+    try:
+        kwargs = dict(input=json.dumps({'kind': kind, 'fields': fields}), timeout=65)
+        raw = ssh_runner(args, **kwargs) if ssh_runner else _ssh(args, **kwargs, output_limit=1024*1024)
+        result = _decode(raw, limit=1024*1024)
+        if result.get('success') is True: return result
+        return {'success': False, 'error_code': result.get('error_code') if result.get('error_code') in queue.ERRORS else 'receiver_unavailable'}
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+        return {'success': False, 'error_code': 'receiver_unavailable'}
 
 
 def process_queued(*, target=None, remote_command=None, queue_options=None, ssh_runner=None):

@@ -61,3 +61,20 @@ class WriteMcpTests(unittest.IsolatedAsyncioTestCase):
             names={t.name for t in (await session.list_tools()).tools}
             self.assertIn('search_apple_calendar',names)
             self.assertNotIn('queue_apple_calendar_event',names)
+
+    async def test_structured_edit_tools_queue_without_recreating(self):
+        async with self.session() as session:
+            tools = {t.name: t for t in (await session.list_tools()).tools}
+            self.assertIn('update_apple_calendar_event', tools)
+            self.assertTrue(tools['delete_apple_calendar_event'].annotations.destructiveHint)
+            self.assertIn('list_apple_calendars', tools)
+            self.assertNotIn('update_apple_reminder', tools)
+            args = dict(request_key='update', item_id='native-id',
+                        occurrence_start_at='2026-11-02T12:00:00-05:00',
+                        expected_revision='a' * 64, scope='this', changes={'notes': '', 'location': 'Library'}, automatic_driving=False)
+            result = await session.call_tool('update_apple_calendar_event', args)
+            self.assertFalse(result.isError, str(result.content))
+            self.assertEqual(json.loads(result.content[0].text)['state'], 'queued')
+            args['changes'] = {'notes': 'valid field', 'urgent': True}
+            invalid = await session.call_tool('update_apple_calendar_event', args)
+            self.assertTrue(invalid.isError)

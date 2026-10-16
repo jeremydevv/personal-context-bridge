@@ -13,7 +13,7 @@ import sys
 import tempfile
 from zoneinfo import ZoneInfo
 
-from .apple_write_queue import ID, canonical, timestamp, utcnow, validate_payload
+from .apple_write_queue import ERRORS, ID, canonical, timestamp, utcnow, validate_payload
 
 MAX_INPUT = 160000
 DEFAULT_RECEIPTS = Path.home()/'.local/share/personal-context-bridge/apple-write-receipts/receipts.sqlite3'
@@ -78,7 +78,12 @@ def _native(runner, args):
         with tempfile.TemporaryDirectory(prefix='apple-write-') as tmp:
             output, error = Path(tmp)/'out', Path(tmp)/'err'
             output.touch(mode=0o600); error.touch(mode=0o600)
-            result = runner(['/usr/bin/open','-n','-W','-a',helper,'--args',
+            launcher = ['/usr/bin/open','-n','-W','-a',helper]
+            if args[1] == 'bridge':
+                directory = os.environ.get('PERSONAL_CONTEXT_APPLE_NATIVE_BIN_DIR', '')
+                if not Path(directory).is_absolute(): raise ValueError('native bridge binary directory required')
+                launcher += ['--env', 'APPLE_PIM_BIN_DIR=' + directory]
+            result = runner(launcher+['--args',
                              Path(args[0]).name,str(output),str(error)]+args[1:], **kwargs)
             with output.open() as stream: raw = stream.read(1024*1024+1)
     else:
@@ -93,9 +98,48 @@ def _native(runner, args):
         # already produced a complete result. Trust only the native protocol
         # in our fresh private output file, never the launcher's status alone.
         auth_result = args[1] == 'auth-status' and isinstance(output.get('authorization'), str)
-        if output.get('success') is not True and not auth_result:
+        bridge_error = (args[1] == 'bridge' and output.get('success') is False
+                        and type(output.get('write_started')) is bool and output.get('error_code') in ERRORS)
+        if output.get('success') is not True and not auth_result and not bridge_error:
             raise ValueError('native command did not confirm success')
     return output
+
+
+def _bridge(kind, fields, runner):
+    with tempfile.TemporaryDirectory(prefix='apple-pim-request-') as tmp:
+        path = Path(tmp) / 'request.json'
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'w') as stream:
+            json.dump({'kind': kind, 'fields': fields}, stream)
+        directory = os.environ.get('PERSONAL_CONTEXT_APPLE_NATIVE_BIN_DIR', '')
+        binary = str(Path(directory) / ('calendar-cli' if kind == 'calendar' else 'reminder-cli')) if directory else _binary(kind)
+        return _native(runner, [binary, 'bridge', '--request=' + str(path)])
+
+
+def read_native(request, *, runner=None):
+    from .apple_pim_fields import text
+    if not isinstance(request, dict) or set(request) != {'kind', 'fields'} or request['kind'] not in ('calendar', 'reminder'):
+        raise ValueError('invalid read request')
+    fields = request['fields']
+    if not isinstance(fields, dict) or fields.get('operation') not in ('inspect', 'destinations', 'driving_eta'):
+        raise ValueError('invalid read operation')
+    if fields['operation'] == 'destinations':
+        if set(fields) != {'operation'}: raise ValueError('invalid destination read')
+    elif fields['operation'] == 'driving_eta':
+        if request['kind'] != 'calendar' or set(fields) != {'operation', 'destination', 'arrival_at', 'origin'}:
+            raise ValueError('invalid driving request')
+        text(fields['destination'], 'destination', empty=False)
+        timestamp(fields['arrival_at'])
+        origin = fields['origin']
+        if not isinstance(origin, dict) or set(origin) != {'latitude', 'longitude', 'age_seconds', 'observed_at'}:
+            raise ValueError('invalid driving origin')
+        timestamp(origin['observed_at'])
+    else:
+        allowed = {'operation', 'item_id'} | ({'occurrence_start_at'} if request['kind'] == 'calendar' else set())
+        if set(fields) != allowed: raise ValueError('invalid inspection')
+        text(fields['item_id'], 'native ID', empty=False)
+        if request['kind'] == 'calendar': timestamp(fields['occurrence_start_at'])
+    return _bridge(request['kind'], fields, runner or subprocess.run)
 
 
 def _access(kind, runner):
@@ -174,6 +218,31 @@ def apply_job(payload, *, receipt_db_path=None, runner=None):
         db.execute('INSERT INTO receipts VALUES (?,?,NULL)',(job_id,digest)); db.commit()
         creating = False
         try:
+            from .apple_pim_fields import EXTENDED
+            if 'operation' in fields or set(fields) & EXTENDED:
+                native_fields = fields.copy()
+                if 'operation' not in fields:
+                    binary, config = _access(kind, runner)
+                    destination = _destination(kind, fields, runner, binary, config)
+                    if destination: native_fields['calendar' if kind == 'calendar' else 'list_name'] = destination
+                creating = True
+                output = _bridge(kind, native_fields, runner)
+                if output.get('success') is False and output.get('write_started') is False:
+                    code = output.get('error_code')
+                    receipt = dict(job_id=job_id, state='failed', error_code=code if code in ERRORS else 'native_error')
+                else:
+                    item_id = output.get('item_id')
+                    if output.get('success') is not True or output.get('verified') is not True or not isinstance(item_id, str) or not 1 <= len(item_id) <= 2048 or any(ord(c) < 32 for c in item_id):
+                        raise ValueError('native change unconfirmed')
+                    timing = output.get('timing', dict(late=False, alert_at='', alert_late=False, warnings=[]))
+                    if not isinstance(timing, dict) or set(timing) != {'late', 'alert_at', 'alert_late', 'warnings'}:
+                        raise ValueError('invalid timing receipt')
+                    if type(timing['late']) is not bool or type(timing['alert_late']) is not bool or timing['warnings'] not in ([], ['earlier_alarm_display']):
+                        raise ValueError('invalid timing metadata')
+                    if timing['alert_at']: timestamp(timing['alert_at'])
+                    receipt = dict(job_id=job_id, state='completed', item_id=item_id, completed_at=utcnow().isoformat(), **timing)
+                db.execute('UPDATE receipts SET receipt=? WHERE job_id=?', (json.dumps(receipt), job_id)); db.commit()
+                return receipt
             if kind == 'reminder' and fields['due_at']:
                 _validate_reminder_time(fields['due_at'])
             binary, config = _access(kind,runner)
@@ -212,9 +281,18 @@ def main():
     parser = argparse.ArgumentParser()
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--apply-stdin', action='store_true'); group.add_argument('--health', action='store_true')
+    group.add_argument('--read-stdin', action='store_true')
     options = parser.parse_args()
     if options.health:
         print(json.dumps(health())); return
+    if options.read_stdin:
+        try:
+            raw = sys.stdin.read(MAX_INPUT + 1)
+            if len(raw) > MAX_INPUT: raise ValueError('request too large')
+            print(json.dumps(read_native(json.loads(raw, object_pairs_hook=_unique))))
+        except (OSError, ValueError, subprocess.SubprocessError):
+            print(json.dumps({'success': False, 'error_code': 'receiver_unavailable'}))
+        return
     try: result = apply_job(read_job(sys.stdin))
     except (OSError, ValueError, sqlite3.Error):
         print(json.dumps({'state':'rejected','error_code':'receiver_unavailable'})); raise SystemExit(1)

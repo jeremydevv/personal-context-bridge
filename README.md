@@ -72,6 +72,10 @@ and image-only PDFs may have no readable content.
 
 ## Privacy and writes
 
+For opt-in native Calendar and Reminders editing, see
+[direct MCP editing](docs/APPLE-PIM-EDITING.md): exact-ID updates/deletes,
+calendar/list selection, alerts, driving estimates, real Urgent alarms and subtasks.
+
 Archives use SQLCipher; binary attachments use authenticated AES-GCM encryption.
 Keys and upload credentials are separate files created with mode 0600 in a
 private directory. Keep a secure recovery copy of the key: losing it loses access

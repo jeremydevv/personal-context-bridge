@@ -15,3 +15,7 @@ a1fb9b8ce5f1005c8c182c09e8577b76a1cb8865. They are synthetic protocol examples.
 The Notes automation approach was inspired by krmj22/macos-mcp; this repository
 provides its own bounded snapshot adapter. pytypedstream is an optional
 installed dependency; its source is not vendored here.
+
+The narrow native ReminderKit adapter adapts API declarations and save patterns
+from viticci/remctl d3985293a01aa1c2da761ff442812a148be9964f (MIT).
+Its license and attribution are preserved in third_party/remctl.

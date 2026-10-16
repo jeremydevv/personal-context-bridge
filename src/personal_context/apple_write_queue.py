@@ -1,4 +1,4 @@
-"""Encrypted, idempotent outbox for approved native Apple PIM creations."""
+"""Encrypted, idempotent outbox for approved native Apple PIM writes."""
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
@@ -13,6 +13,8 @@ ID = re.compile(r'[0-9a-f]{32}\Z')
 DATE = re.compile(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)\Z')
 TERMINAL = ('completed', 'cancelled', 'failed', 'needs_review')
 ERRORS = {'delivery_unconfirmed', 'interrupted_delivery', 'native_write_unconfirmed', 'invalid_destination', 'receiver_unavailable', 'request_conflict', 'unsupported_reminder_time'}
+ERRORS |= {'revision_conflict', 'item_not_found', 'read_only', 'unsupported_capability', 'invalid_fields', 'verification_failed', 'native_error'}
+ERRORS |= {'route_unavailable', 'ambiguous_destination', 'location_stale'}
 
 
 def utcnow():
@@ -29,12 +31,17 @@ def timestamp(value):
 
 
 def validate_payload(kind, payload):
+    from . import apple_pim_fields as fields
     if kind not in ('calendar', 'reminder') or not isinstance(payload, dict):
         raise ValueError('invalid job kind or fields')
+    if 'operation' in payload:
+        return fields.edit(kind, payload)
     defaults = {'notes':'', 'alarm_minutes_before': None if kind == 'calendar' else 0}
     defaults.update({'calendar':''} if kind == 'calendar' else {'due_at':'', 'list_name':''})
     allowed = set(defaults) | {'title', 'start_at', 'end_at'} if kind == 'calendar' else set(defaults) | {'title'}
-    if set(payload) - allowed:
+    extended = {k: v for k, v in payload.items() if k in fields.EXTENDED}
+    if extended: fields.changes(kind, extended)
+    if set(payload) - allowed - set(extended):
         raise ValueError('unknown job fields')
     p = defaults | payload
     for name, maximum in [('title', 500), ('notes', 20000), ('calendar' if kind == 'calendar' else 'list_name', 500)]:
@@ -55,6 +62,12 @@ def validate_payload(kind, payload):
         raise ValueError('an alarm requires a due time')
     if kind == 'reminder' and not isinstance(p['due_at'], str):
         raise ValueError('invalid due time')
+    if 'alerts' in p and 'alarm_minutes_before' in payload:
+        raise ValueError('use alerts or alarm_minutes_before, not both')
+    if kind == 'reminder' and p.get('alerts') and not p['due_at']:
+        raise ValueError('timed alerts require a due date')
+    if 'alerts' in p:
+        p.pop('alarm_minutes_before')
     return p
 
 
@@ -109,18 +122,44 @@ def _status(db, job_id):
     return result
 
 
-def queue_job(kind, request_key, payload, *, db_path=None, key_file=None, now=None):
+def _request_digest(kind, payload, automatic_identity=False):
+    if automatic_identity:
+        if kind != 'calendar': raise ValueError('automatic driving requires a calendar event')
+        payload = payload.copy()
+        if payload.get('operation') == 'update':
+            payload['changes'] = payload['changes'] | {'driving': None}
+        else:
+            payload['driving'] = None
+        encoded = json.dumps({'automatic_driving': True, 'intent': json.loads(canonical(kind, payload))}, sort_keys=True, separators=(',', ':'))
+    else: encoded = canonical(kind, payload)
+    return hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def _existing(db, request_key, digest):
+    old = db.execute('SELECT job_id,digest,state,created_at FROM apple_writes WHERE request_key=?', (request_key,)).fetchone()
+    if old:
+        if old[1] != digest: raise ValueError('request key already used with different content')
+        return dict(job_id=old[0], state=old[2], created_at=old[3])
+    return None
+
+
+def existing_job(kind, request_key, payload, *, automatic_identity=False, db_path=None, key_file=None):
+    digest = _request_digest(kind, payload, automatic_identity)
+    with _db(db_path, key_file) as db:
+        return _existing(db, request_key, digest)
+
+
+def queue_job(kind, request_key, payload, *, db_path=None, key_file=None, now=None, automatic_identity=False):
     if not isinstance(request_key, str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,128}', request_key):
         raise ValueError('invalid request key')
     encoded = canonical(kind, payload)
-    digest = hashlib.sha256(encoded.encode()).hexdigest()
+    digest = _request_digest(kind, payload, automatic_identity)
     created = (now or utcnow()).isoformat()
     with _db(db_path, key_file) as db:
         db.execute('BEGIN IMMEDIATE')
-        old = db.execute('SELECT job_id,digest,state,created_at FROM apple_writes WHERE request_key=?', (request_key,)).fetchone()
+        old = _existing(db, request_key, digest)
         if old:
-            if old[1] != digest: raise ValueError('request key already used with different content')
-            return dict(job_id=old[0], state=old[2], created_at=old[3])
+            return old
         job_id = uuid.uuid4().hex
         db.execute('INSERT INTO apple_writes VALUES (?,?,?,?,?,?,?,?,?,?)',
                    (job_id,request_key,digest,kind,encoded,'queued',created,created,None,None))

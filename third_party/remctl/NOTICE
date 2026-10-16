@@ -1,0 +1,10 @@
+The narrow ReminderKit adapter in scripts/apple_reminder_private.m adapts API
+declarations and the native save pattern from RemCTL, an MIT-licensed project:
+https://github.com/viticci/remctl
+Reference revision: d3985293a01aa1c2da761ff442812a148be9964f
+Copyright (c) 2026 RemCTL contributors. The license is included alongside this notice.
+
+The adapter is not affiliated with Apple. It uses private ReminderKit APIs for
+native Urgent state and subtask hierarchy only. It never edits Apple's databases.
+Missing APIs or failed native readback stop the operation; uncertain saves require
+review. macOS updates may change or remove these APIs.

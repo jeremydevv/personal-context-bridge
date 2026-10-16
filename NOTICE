@@ -19,3 +19,5 @@ installed dependency; its source is not vendored here.
 The narrow native ReminderKit adapter adapts API declarations and save patterns
 from viticci/remctl d3985293a01aa1c2da761ff442812a148be9964f (MIT).
 Its license and attribution are preserved in third_party/remctl.
+The guarded EventKit attendee adapter is informed by go-eventkit (MIT).
+See third_party/go-eventkit/LICENSE and NOTICE for attribution.

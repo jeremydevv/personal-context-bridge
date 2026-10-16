@@ -101,10 +101,10 @@ def edit(kind, payload):
     if kind == 'calendar':
         timestamp(payload['occurrence_start_at'])
         if payload['scope'] not in ('this', 'future'): raise ValueError('scope must be this or future')
-    if payload['operation'] == 'update_private' and kind == 'reminder':
+    if payload['operation'] == 'update_private':
+        from .apple_pim_extensions import validate
         patch = payload.get('changes')
-        if not isinstance(patch, dict) or not patch or set(patch) - {'urgent', 'add_subtasks'}:
-            raise ValueError('private changes support only urgent and add_subtasks')
+        validate(kind, patch)
         if 'urgent' in patch and type(patch['urgent']) is not bool: raise ValueError('invalid urgent flag')
         if 'add_subtasks' in patch:
             children = patch['add_subtasks']

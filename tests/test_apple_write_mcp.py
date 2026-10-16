@@ -78,3 +78,24 @@ class WriteMcpTests(unittest.IsolatedAsyncioTestCase):
             args['changes'] = {'notes': 'valid field', 'urgent': True}
             invalid = await session.call_tool('update_apple_calendar_event', args)
             self.assertTrue(invalid.isError)
+
+    async def test_native_extension_tools_are_typed_and_source_scoped(self):
+        async with self.session('calendar') as session:
+            tools = {t.name:t for t in (await session.list_tools()).tools}
+            self.assertIn('edit_apple_calendar_attachments', tools)
+            self.assertNotIn('edit_apple_reminder_tags', tools)
+            self.assertIn('allow_invitation_delivery', tools['edit_apple_calendar_attendees'].inputSchema['required'])
+            args = dict(request_key='invitation-consent', item_id='native-id', expected_revision='a'*64,
+                occurrence_start_at='2031-11-01T17:00:00Z', scope='this',
+                allow_invitation_delivery=False, add=[{'email':'person@example.com'}])
+            result = await session.call_tool('edit_apple_calendar_attendees', args)
+            self.assertTrue(result.isError)
+        async with self.session('reminder') as session:
+            tools = {t.name:t for t in (await session.list_tools()).tools}
+            self.assertIn('edit_apple_reminder_attachments', tools)
+            self.assertNotIn('edit_apple_calendar_attendees', tools)
+            result = await session.call_tool('edit_apple_reminder_tags', dict(request_key='tags',
+                item_id='native-id', expected_revision='a'*64, changes={'set_tags':['focus']}))
+            self.assertFalse(result.isError, str(result.content))
+            status = await session.call_tool('apple_write_job_status', {'job_id':json.loads(result.content[0].text)['job_id']})
+            self.assertNotIn('focus', status.content[0].text)

@@ -28,6 +28,18 @@ class ExecutorTests(unittest.TestCase):
         for data in ('x'*m.MAX_INPUT, '{', '[]', '{"job_id":1,"job_id":2}'):
             with self.assertRaises(ValueError): m.read_job(io.StringIO(data))
 
+    def test_executor_accepts_bounded_inline_attachment_above_old_input_limit(self):
+        import base64
+        import hashlib
+        data = b'\x89PNG\r\n\x1a\n' + b'fictional' * 25000
+        fields = dict(operation='update_private', item_id='native-id', expected_revision='a'*64,
+                      occurrence_start_at='2031-11-01T17:00:00Z', scope='this',
+                      changes={'add_attachments':[dict(filename='fictional.png', media_type='image/png',
+                          content_base64=base64.b64encode(data).decode(), sha256=hashlib.sha256(data).hexdigest())]})
+        job = dict(job_id='a'*32, kind='calendar', fields=fields)
+        self.assertGreater(len(json.dumps(job)), 160000)
+        self.assertEqual(m.read_job(io.StringIO(json.dumps(job))), job)
+
     def test_executor_passes_metacharacters_as_literal_argv_values(self):
         self.job['fields']['calendar']='Existing'
         self.assertEqual(self.apply()['state'],'completed')

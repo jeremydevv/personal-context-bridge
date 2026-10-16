@@ -1,0 +1,7 @@
+Native EventKit attendee factory and organizer/self initialization patterns in
+scripts/apple_calendar_private.m were informed by BRO3886/go-eventkit,
+calendar/bridge_darwin.m, MIT licensed.
+Reference revision: a3dbabc9ea2b41f2725437ea1e58c6c53b835702.
+Source: https://github.com/BRO3886/go-eventkit
+Private APIs are capability-checked and may change with macOS or account type.
+Native roster readback is not proof of recipient invitation delivery.

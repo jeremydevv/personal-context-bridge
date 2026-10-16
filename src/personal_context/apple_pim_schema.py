@@ -56,3 +56,32 @@ class ReminderChanges(TypedDict, total=False):
 class Subtask(TypedDict, total=False):
     title: Required[str]
     notes: str
+
+
+@with_config(ConfigDict(extra='forbid', strict=True))
+class Attendee(TypedDict, total=False):
+    email: Required[str]
+    name: str
+
+
+@with_config(ConfigDict(extra='forbid', strict=True))
+class Attachment(TypedDict):
+    filename: str
+    media_type: Literal['image/png', 'image/jpeg', 'application/pdf']
+    content_base64: str
+    sha256: str
+
+
+@with_config(ConfigDict(extra='forbid', strict=True))
+class ImageAttachment(TypedDict):
+    filename: str
+    media_type: Literal['image/png', 'image/jpeg']
+    content_base64: str
+    sha256: str
+
+
+@with_config(ConfigDict(extra='forbid', strict=True))
+class TagChanges(TypedDict, total=False):
+    set_tags: list[str]
+    add_tags: list[str]
+    remove_tags: list[str]

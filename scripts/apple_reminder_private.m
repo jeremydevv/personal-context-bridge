@@ -1,7 +1,7 @@
 // ReminderKit API declarations and save pattern adapted from RemCTL (MIT).
 // Source: viticci/remctl d3985293a01aa1c2da761ff442812a148be9964f.
 // See third_party/remctl/LICENSE. No direct database reads or writes.
-#import <Foundation/Foundation.h>
+#import "apple_pim_attachment.h"
 
 @interface REMObjectID : NSObject
 + (id)objectIDWithURL:(NSURL *)url;
@@ -22,6 +22,18 @@
 - (id)subtaskContext;
 - (id)urgentAlarmContext;
 - (id)flaggedContext;
+- (id)hashtagContext;
+- (id)attachmentContext;
+- (NSArray *)hashtags;
+- (NSString *)name;
+- (void)removeAllHashtags;
+- (id)addHashtagWithType:(NSInteger)type name:(NSString *)name;
+- (NSArray *)attachments;
+- (NSArray *)fileAttachments;
+- (NSURL *)fileURL;
+- (NSString *)uti;
+- (void)removeAttachment:(id)attachment;
+- (id)addImageAttachmentWithData:(NSData *)data uti:(NSString *)uti width:(NSUInteger)width height:(NSUInteger)height;
 - (NSArray *)fetchRemindersWithError:(NSError **)error;
 - (BOOL)isUrgentStateEnabledForCurrentUser;
 - (void)setIsUrgentStateEnabledForCurrentUser:(BOOL)value;
@@ -77,8 +89,22 @@ static NSDictionary *inspect(id reminder) {
         return [a[@"item_id"] compare:b[@"item_id"]];
     }];
     stage = @"read_urgent_parent";
+    id tags = [reminder respondsToSelector:@selector(hashtagContext)] ? [reminder hashtagContext] : nil;
+    NSMutableArray *names = [NSMutableArray array];
+    if (tags && [tags respondsToSelector:@selector(hashtags)]) for (NSObject *tag in [tags hashtags]) [names addObject:[tag name]];
+    [names sortUsingSelector:@selector(compare:)];
+    id files = [reminder respondsToSelector:@selector(attachmentContext)] ? [reminder attachmentContext] : nil;
+    NSMutableArray *attachments = [NSMutableArray array];
+    if (files && [files respondsToSelector:@selector(fileAttachments)]) for (id file in [files fileAttachments]) {
+        NSData *bytes = [file respondsToSelector:@selector(fileURL)] ? PCLocalBytes([file fileURL]) : nil;
+        [attachments addObject:@{@"attachment_id":identifier(file), @"uti":[file uti] ?: @"",
+            @"available":@(bytes != nil), @"sha256":bytes ? PCSHA(bytes) : @"", @"bytes":@(bytes.length)}];
+    }
+    [attachments sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) { return [a[@"attachment_id"] compare:b[@"attachment_id"]]; }];
     return @{@"urgent": @([urgent isUrgentStateEnabledForCurrentUser]),
              @"supports_urgent": @(urgent != nil), @"supports_subtasks": @(context != nil),
+             @"supports_tags":@(tags != nil), @"tags":names, @"attachments":attachments,
+             @"supports_image_attachments":@(files != nil), @"supports_pdf_attachments":@NO,
              @"parent_id": identifier([reminder parentReminder]), @"subtasks": subtasks};
 }
 
@@ -87,7 +113,7 @@ int main(int argc, const char *argv[]) {
         @try {
             if (argc != 2) fail(@"invalid_fields");
             NSData *input = [NSData dataWithContentsOfFile:[NSString stringWithUTF8String:argv[1]]];
-            if (!input || input.length > 160000) fail(@"invalid_fields");
+            if (!input || input.length > 8388608) fail(@"invalid_fields");
             NSDictionary *request = [NSJSONSerialization JSONObjectWithData:input options:0 error:nil];
             if (![request isKindOfClass:NSDictionary.class]) fail(@"invalid_fields");
             NSString *operation = request[@"operation"];
@@ -102,12 +128,58 @@ int main(int argc, const char *argv[]) {
             if (![operation isEqualToString:@"update_private"]) fail(@"invalid_fields");
             NSDictionary *changes = request[@"changes"];
             if (![changes isKindOfClass:NSDictionary.class] || changes.count == 0) fail(@"invalid_fields");
-            NSSet *allowed = [NSSet setWithArray:@[@"urgent", @"add_subtasks"]];
+            NSSet *allowed = [NSSet setWithArray:@[@"urgent", @"add_subtasks", @"set_tags", @"add_tags", @"remove_tags", @"add_attachments", @"remove_attachments"]];
             if (![[NSSet setWithArray:changes.allKeys] isSubsetOfSet:allowed]) fail(@"unsupported_capability");
             REMSaveRequest *save = [[REMSaveRequest alloc] initWithStore:store];
             stage = @"update_request";
             id change = [save updateReminder:reminder];
             if (!change) fail(@"unsupported_capability");
+            NSMutableArray *expectedTags = [before[@"tags"] mutableCopy];
+            if (changes[@"set_tags"] || changes[@"add_tags"] || changes[@"remove_tags"]) {
+                stage = @"set_tags";
+                id context = [change hashtagContext];
+                if (!context || ![context respondsToSelector:@selector(removeAllHashtags)] ||
+                    ![context respondsToSelector:@selector(addHashtagWithType:name:)]) fail(@"unsupported_capability");
+                if (changes[@"set_tags"]) expectedTags = [changes[@"set_tags"] mutableCopy];
+                else {
+                    for (NSString *tag in changes[@"remove_tags"]) {
+                        NSIndexSet *matches = [expectedTags indexesOfObjectsPassingTest:^BOOL(NSString *name, NSUInteger index, BOOL *stop) { return [name caseInsensitiveCompare:tag] == NSOrderedSame; }];
+                        [expectedTags removeObjectsAtIndexes:matches];
+                    }
+                    for (NSString *tag in changes[@"add_tags"]) {
+                        BOOL exists = NO;
+                        for (NSString *name in expectedTags) if ([name caseInsensitiveCompare:tag] == NSOrderedSame) exists = YES;
+                        if (!exists) [expectedTags addObject:tag];
+                    }
+                }
+                [context removeAllHashtags];
+                for (NSString *name in expectedTags) if (![context addHashtagWithType:1 name:name]) fail(@"native_error");
+            }
+            NSMutableSet *expectedAttachmentIDs = [NSMutableSet setWithArray:[before[@"attachments"] valueForKey:@"attachment_id"]];
+            NSMutableArray *addedHashes = [NSMutableArray array];
+            if (changes[@"add_attachments"] || changes[@"remove_attachments"]) {
+                stage = @"attachments";
+                id context = [change attachmentContext];
+                if (!context || ![context respondsToSelector:@selector(attachments)]) fail(@"unsupported_capability");
+                for (NSString *target in changes[@"remove_attachments"]) {
+                    id match = nil;
+                    for (id file in [context attachments]) if ([identifier(file) isEqual:target]) match = file;
+                    if (!match || ![expectedAttachmentIDs containsObject:target] || ![context respondsToSelector:@selector(removeAttachment:)]) fail(@"invalid_fields");
+                    [context removeAttachment:match];
+                    [expectedAttachmentIDs removeObject:target];
+                }
+                for (NSDictionary *spec in changes[@"add_attachments"]) {
+                    if (![context respondsToSelector:@selector(addImageAttachmentWithData:uti:width:height:)]) fail(@"unsupported_capability");
+                    NSUInteger width = 0, height = 0;
+                    NSData *bytes = PCFileData(spec, NO, &width, &height);
+                    if (!bytes) fail(@"invalid_fields");
+                    if ([[before[@"attachments"] valueForKey:@"sha256"] containsObject:spec[@"sha256"]]) fail(@"invalid_fields");
+                    id file = [context addImageAttachmentWithData:bytes uti:[spec[@"media_type"] isEqual:@"image/png"] ? @"public.png" : @"public.jpeg" width:width height:height];
+                    if (!file || identifier(file).length == 0) fail(@"native_error");
+                    [expectedAttachmentIDs addObject:identifier(file)];
+                    [addedHashes addObject:spec[@"sha256"]];
+                }
+            }
             if (changes[@"urgent"]) {
                 stage = @"set_urgent";
                 if (CFGetTypeID((__bridge CFTypeRef)changes[@"urgent"]) != CFBooleanGetTypeID()) fail(@"invalid_fields");
@@ -145,6 +217,9 @@ int main(int argc, const char *argv[]) {
             if (![save saveSynchronouslyWithError:&error]) fail(@"native_error");
             REMStore *fresh = [REMStore new];
             NSDictionary *after = inspect(fetch(fresh, request[@"item_id"]));
+            if (![[NSSet setWithArray:after[@"tags"]] isEqual:[NSSet setWithArray:expectedTags]]) fail(@"verification_failed");
+            if (![[NSSet setWithArray:[after[@"attachments"] valueForKey:@"attachment_id"]] isEqual:expectedAttachmentIDs]) fail(@"verification_failed");
+            for (NSString *hash in addedHashes) if (![[after[@"attachments"] valueForKey:@"sha256"] containsObject:hash]) fail(@"verification_failed");
             if (changes[@"urgent"] && ![changes[@"urgent"] isEqual:after[@"urgent"]]) fail(@"verification_failed");
             for (NSDictionary *child in created) {
                 if (![after[@"subtasks"] containsObject:child]) fail(@"verification_failed");

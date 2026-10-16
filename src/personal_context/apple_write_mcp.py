@@ -3,7 +3,7 @@ import os
 from . import apple_write_queue as queue
 from .apple_write_worker import transport_config
 from .apple_write_worker import read_native
-from .apple_pim_schema import CalendarChanges, ReminderChanges, Subtask
+from .apple_pim_schema import CalendarChanges, ReminderChanges, Subtask, Attendee, Attachment, ImageAttachment, TagChanges
 
 
 def register(mcp, source):
@@ -66,7 +66,7 @@ def register(mcp, source):
 
         def update_event(request_key: str, item_id: str, occurrence_start_at: str,
                          expected_revision: str, scope: str, changes: CalendarChanges, automatic_driving: bool = True) -> dict:
-            """Queue a precise native event patch after user authorization. Inspect live first; pass its revision. Absent fields are preserved; empty notes/location/url clears, alerts=[] clears alerts, recurrence=null removes repeat. Dates are offset ISO instants; timezone is an IANA name. Calendar accepts an exact existing destination ID (preferred) or unique name. Scope 'this'/'future' must be explicit; never infer a series-wide change. Alerts are minutes before start. Physical location/start changes automatically recalculate car travel from fresh phone location unless automatic_driving=false is explicitly requested. All-day boundaries must be local midnights with exclusive end. Queued is not completion; revision conflict means inspect again. Attendee management is unsupported."""
+            """Queue a precise native event patch after user authorization. Inspect live first; pass its revision. Absent fields are preserved; empty notes/location/url clears, alerts=[] clears alerts, recurrence=null removes repeat. Dates are offset ISO instants; timezone is an IANA name. Calendar accepts an exact existing destination ID (preferred) or unique name. Scope 'this'/'future' must be explicit; never infer a series-wide change. Alerts are minutes before start. Physical location/start changes automatically recalculate car travel from fresh phone location unless automatic_driving=false is explicitly requested. All-day boundaries must be local midnights with exclusive end. Queued is not completion; revision conflict means inspect again. Use dedicated attendee/attachment tools for those native fields."""
             fields = dict(operation='update', item_id=item_id, occurrence_start_at=occurrence_start_at,
                           expected_revision=expected_revision, scope=scope, changes=changes)
             routed = automatic_driving and bool(set(changes) & {'location', 'start_at', 'all_day'})
@@ -113,6 +113,28 @@ def register(mcp, source):
             fields['changes'] = {'driving': driving}
             return queue.queue_job(source, request_key, fields, automatic_identity=True)
         mcp.tool(name='set_apple_calendar_driving_time', annotations=edit)(driving_event)
+
+        def attendees_event(request_key: str, item_id: str, occurrence_start_at: str, expected_revision: str,
+                            scope: str, allow_invitation_delivery: bool, add: list[Attendee] | None = None,
+                            remove: list[str] | None = None) -> dict:
+            """Queue real native attendee additions/removals after user approval of exact email addresses AND invitation/cancellation delivery. This can send real provider notifications; never call merely to draft an invitation. Requires live inspection, organizer rights and private_metadata.supports_attendee_edits. Explicit scope this/future, native exact event ID and revision required. Does not impersonate another organizer or remove self/organizer. Existing invitees and unrelated fields are preserved. Native readback confirms roster, not recipient delivery. Unsupported providers/macOS fail explicitly; needs_review must not be replayed."""
+            changes = {'allow_invitation_delivery':allow_invitation_delivery}
+            if add is not None: changes['add_attendees'] = add
+            if remove is not None: changes['remove_attendees'] = remove
+            return queue.queue_job(source, request_key, dict(operation='update_private', item_id=item_id,
+                occurrence_start_at=occurrence_start_at, expected_revision=expected_revision, scope=scope, changes=changes))
+        mcp.tool(name='edit_apple_calendar_attendees', annotations=edit)(attendees_event)
+
+        def attachments_event(request_key: str, item_id: str, occurrence_start_at: str, expected_revision: str,
+                              scope: str, add: list[Attachment] | None = None, remove: list[str] | None = None,
+                              allow_invitation_delivery: bool = False) -> dict:
+            """Queue native Calendar attachment additions/removals after user approval. Inspect live first; use exact attachment IDs from private_metadata for removals. Supports PNG/JPEG/PDF only when the existing calendar supports native attachments. Each add requires safe filename, media_type, exact base64 bytes and SHA256 (2 MiB/file, 4 MiB/batch, max 5). No paths/URLs fetched, no public uploads, no PDF-to-image substitution. Bytes stay in encrypted queue and private temporary receiver files; completion clears queued bytes. Events with invitees require explicit allow_invitation_delivery=true approval because provider updates may notify them. Exact event/occurrence/revision and this/future scope required. Native file readback verifies persistence, not cross-device sync."""
+            changes = {'allow_invitation_delivery':allow_invitation_delivery}
+            if add is not None: changes['add_attachments'] = add
+            if remove is not None: changes['remove_attachments'] = remove
+            return queue.queue_job(source, request_key, dict(operation='update_private', item_id=item_id,
+                occurrence_start_at=occurrence_start_at, expected_revision=expected_revision, scope=scope, changes=changes))
+        mcp.tool(name='edit_apple_calendar_attachments', annotations=edit)(attachments_event)
     else:
         def inspect_reminder(item_id: str) -> dict:
             """Read the LIVE native reminder and revision before editing/deleting. Requires the exact native ID and reachable authorized Mac. Archive state can be stale."""
@@ -142,6 +164,22 @@ def register(mcp, source):
                 expected_revision=expected_revision, changes={'add_subtasks': subtasks}))
         mcp.tool(name='add_apple_reminder_subtasks', annotations=write)(add_subtasks)
 
+        def tags_reminder(request_key: str, item_id: str, expected_revision: str, changes: TagChanges) -> dict:
+            """Queue REAL synced Reminders tags after approval. Inspect live first; check supports_tags. set_tags replaces all tags ([] clears); alternatively add_tags/remove_tags preserve untouched tags. Names are 1-80 letters/numbers/underscore/hyphen without # or spaces. Guarded ReminderKit save and native readback, not hashtags appended to title/notes. Requires supporting account/macOS, exact native ID and live revision."""
+            return queue.queue_job(source, request_key, dict(operation='update_private', item_id=item_id,
+                expected_revision=expected_revision, changes=changes))
+        mcp.tool(name='edit_apple_reminder_tags', annotations=edit)(tags_reminder)
+
+        def attachments_reminder(request_key: str, item_id: str, expected_revision: str,
+                                 add: list[ImageAttachment] | None = None, remove: list[str] | None = None) -> dict:
+            """Queue native Reminders IMAGE attachment additions/removals after approval. Inspect live first; check supports_image_attachments and use returned native attachment IDs for removal. PNG/JPEG only, 2 MiB/file, 4 MiB/batch, max 5. Each add requires filename/media_type/exact content_base64/SHA256. PDFs are explicitly unsupported: private file setters exist but app rendering/sync is not verified. Never replace a PDF with an image or upload it elsewhere silently. No arbitrary filesystem paths or URLs accepted. Encrypted queue and private receiver staging; native readback verifies bytes and hierarchy, not phone sync. Exact native ID and live revision required."""
+            changes = {}
+            if add is not None: changes['add_attachments'] = add
+            if remove is not None: changes['remove_attachments'] = remove
+            return queue.queue_job(source, request_key, dict(operation='update_private', item_id=item_id,
+                expected_revision=expected_revision, changes=changes))
+        mcp.tool(name='edit_apple_reminder_attachments', annotations=edit)(attachments_reminder)
+
     def destinations() -> dict:
         """List LIVE existing calendars/lists with exact IDs, account names, writable flags and system default. Disambiguate duplicate titles by ID. Does not create accounts, calendars or lists. Requires reachable authorized Mac."""
         return read_native(source, dict(operation='destinations'))
@@ -151,10 +189,11 @@ def register(mcp, source):
         """Report this adapter's field support. Unsupported features must not be silently replaced with notes, priority, or unrelated reminders. Mac reachability and connector discovery are separate from support."""
         from .apple_pim_fields import EVENT, REMINDER
         return dict(adapter='eventkit-json-v1', source=source,
-                    operations=['create', 'inspect', 'update', 'delete', 'destinations'],
+                    operations=['create', 'inspect', 'update', 'update_private', 'delete', 'destinations'],
                     fields=sorted(EVENT if source == 'calendar' else REMINDER),
-                    private_framework_fields=[] if source == 'calendar' else ['native_urgent_alarm', 'subtasks'],
-                    unsupported=['continuous_driving_recalculation', 'attendee_management'] if source == 'calendar' else ['tags', 'attachments'],
+                    private_framework_fields=['attendees', 'attachments', 'travel_duration'] if source == 'calendar' else ['native_urgent_alarm', 'subtasks', 'synced_tags', 'image_attachments'],
+                    attachment_limits=dict(per_file_bytes=2097152, batch_bytes=4194304, max_files=5),
+                    unsupported=['continuous_driving_recalculation'] if source == 'calendar' else ['pdf_attachments'],
                     delivery='encrypted Ubuntu queue to authorized Mac; offline Mac delays writes')
     mcp.tool(name='apple_pim_capabilities', annotations=read)(capabilities)
 

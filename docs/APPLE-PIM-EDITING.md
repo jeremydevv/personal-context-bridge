@@ -35,6 +35,7 @@ delivery. Cancellation of an outbox job never deletes an existing Apple item.
 Tools: `queue_apple_calendar_event`, `inspect_native_apple_calendar_event`,
 `update_apple_calendar_event`, `delete_apple_calendar_event`,
 `list_apple_calendars`, `set_apple_calendar_driving_time`,
+`edit_apple_calendar_attendees`, `edit_apple_calendar_attachments`,
 `apple_pim_capabilities`, and the existing write-job tools.
 
 The creation tool's `details` object and the update tool's `changes` object
@@ -81,11 +82,45 @@ The estimate expires after five minutes before saving. It is a save-time
 estimate; continuous recalculation and Apple's time-to-leave notification
 configuration are not implemented. Phone location sharing must stay active.
 
+The [automatic updater design](superpowers/specs/2026-10-16-automatic-travel-updater-design.md)
+describes a proposed bounded background policy. It is not implemented or enabled.
+
+### Native attendees and attachments
+
+Attendee changes add/remove exact email addresses, preserving the remaining
+roster. They require `allow_invitation_delivery=true`: native saves may send real
+invitations or cancellations. Obtain explicit recipient and delivery approval
+first. Organizer/self removal and non-organizer edits are rejected. The guarded
+EventKit factory is informed by [go-eventkit](https://github.com/BRO3886/go-eventkit)
+revision `a3dbabc9ea2b41f2725437ea1e58c6c53b835702`; its MIT attribution is included.
+Unsaved attendee add/remove has been tested; real invitation delivery has not.
+
+Calendar supports native PNG, JPEG and PDF file attachments. Inspection returns
+stable attachment IDs, filenames, type, availability, size and SHA-256, not file
+paths. Removal requires exact inspected IDs. Attached bytes are saved through
+EventKit, read using its security-scoped URL wrapper, and verified again after
+the private staging files are removed. No public upload, database edits or
+broader disk-access permission is involved. Attachment edits on invited events
+also require invitation-delivery consent because a provider may send updates.
+Apple's [Calendar file attachment guide](https://support.apple.com/guide/calendar/icl58679aba2/mac)
+describes the corresponding native app feature. PNG/PDF persistence and removal
+were verified on disposable non-recurring iCloud events; recurring attachment
+edits and cross-device sync have not been established by those checks.
+
+The bounded transport accepts `filename`, `media_type`, `content_base64` and
+`sha256`; no caller-selected local paths or fetch URLs. Limits are 2 MiB per
+file, 4 MiB per batch and five files. Bytes stay in the encrypted outbox and
+private native temporary files; receipts never include them. Native validation
+decodes images with pixel limits and requires a readable, unencrypted PDF.
+Missing cloud bytes are reported unavailable rather than silently downloaded
+from an arbitrary URL. Native readback does not establish cross-device sync.
+
 ## Reminders
 
 Tools: `queue_apple_reminder`, `inspect_native_apple_reminder`,
 `update_apple_reminder`, `delete_apple_reminder`, `list_apple_reminder_lists`,
 `set_apple_reminder_urgent`, `add_apple_reminder_subtasks`,
+`edit_apple_reminder_tags`, `edit_apple_reminder_attachments`,
 `apple_pim_capabilities`, and write-job tools.
 
 Updates expose title, notes, URL, due time, timezone, list, priority, completion,
@@ -125,6 +160,22 @@ Deleting a parent with children is rejected before saving. Explicitly approve
 and delete the child IDs first, then reinspect/delete the parent. This prevents
 an unmentioned cascade.
 
+### Native tags and image attachments
+
+Tags use the synced native hashtag context, not title or notes text. Supply
+`changes.set_tags` to replace (including `[]` to clear), or `add_tags` and/or
+`remove_tags` to preserve unrelated tags. Names omit `#`; duplicates and
+contradictory changes are rejected. Inspect `private_metadata.supports_tags`.
+
+Image attachments use ReminderKit's native image save context and exact native
+IDs for removal, with the same bounded encrypted transport and byte verification
+as Calendar. PNG and JPEG are supported. PDF/generic-file attachment writes are
+deliberately rejected: a private file-add selector exists, but that alone does
+not prove Reminders renders or syncs those files. RemCTL likewise limits its
+native attachment path to images. A private stable document URL in the reminder's
+URL field remains an explicit alternative when the document already has an
+authorized hosting location; this adapter does not upload or convert PDFs.
+
 ## Native installation
 
 Keep the existing authorized Apple PIM Helper and upstream CLIs. Build these
@@ -157,14 +208,15 @@ destinations, including an iCloud list; uses public test coordinates):
 
 ```sh
 python scripts/check_apple_pim_native.py
+python scripts/check_apple_pim_extensions.py
 ```
 
 ## Remaining feature gaps
 
-This adapter does not claim complete Apple-app parity. Attendee management,
-attachments, Reminders tags/sections/shared assignment, calendar/list creation
-and sharing, and continuous time-to-leave updates are not implemented. The
+This adapter does not claim complete Apple-app parity. Reminders PDF/generic-file
+attachments, sections/shared assignment, calendar/list creation and sharing,
+and continuous time-to-leave updates are not implemented. The
 typed tools reject unsupported properties rather than approximating them with
 notes or unrelated items. RemCTL provides a native-framework path for several
-additional Reminders fields; each needs its own bounded validation/readback
+additional fields; each needs its own bounded validation/readback
 contract before being exposed here.

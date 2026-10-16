@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 from .apple_write_queue import ERRORS, ID, canonical, timestamp, utcnow, validate_payload
 
-MAX_INPUT = 160000
+MAX_INPUT = 8 * 1024 * 1024
 DEFAULT_RECEIPTS = Path.home()/'.local/share/personal-context-bridge/apple-write-receipts/receipts.sqlite3'
 
 

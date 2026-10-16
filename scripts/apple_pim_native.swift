@@ -109,8 +109,8 @@ func alarmRecord(_ alarm: EKAlarm) -> [String: Any] {
     return result
 }
 
-func privateReminder(_ fields: [String: Any]) throws -> [String: Any] {
-    let binary = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().deletingLastPathComponent().appendingPathComponent("reminderkit-helper")
+func privateNative(_ fields: [String: Any], helper: String) throws -> [String: Any] {
+    let binary = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().deletingLastPathComponent().appendingPathComponent(helper)
     guard FileManager.default.isExecutableFile(atPath: binary.path) else { throw BridgeError.unsupported_capability }
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
@@ -135,6 +135,10 @@ func privateReminder(_ fields: [String: Any]) throws -> [String: Any] {
         throw BridgeError(rawValue: result["error_code"] as? String ?? "") ?? .verification_failed
     }
     return result
+}
+
+func privateReminder(_ fields: [String: Any]) throws -> [String: Any] {
+    return try privateNative(fields, helper: "reminderkit-helper")
 }
 
 func ruleRecord(_ rule: EKRecurrenceRule) -> [String: Any] {
@@ -177,6 +181,8 @@ func record(_ item: EKCalendarItem) throws -> [String: Any] {
         result["all_day"] = event.isAllDay
         result["availability"] = event.availability.rawValue
         result["attendees"] = (event.attendees ?? []).map { $0.url.absoluteString }.sorted()
+        result["private_metadata"] = try privateNative(["operation": "inspect", "item_id": event.eventIdentifier ?? "",
+            "occurrence_start_at": iso.string(from: event.startDate)], helper: "eventkit-helper")["metadata"]
     }
     if let reminder = item as? EKReminder {
         let extra = try privateReminder(["operation": "inspect", "item_id": reminder.calendarItemIdentifier])
@@ -418,7 +424,7 @@ struct NativeBridge {
                   CommandLine.arguments[2].hasPrefix("--request=") else { throw BridgeError.invalid_fields }
             let path = String(CommandLine.arguments[2].dropFirst("--request=".count))
             let data = try Data(contentsOf: URL(fileURLWithPath: path))
-            guard data.count <= 160000, let request = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            guard data.count <= 8388608, let request = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let kind = request["kind"] as? String, ["calendar", "reminder"].contains(kind),
                   let fields = request["fields"] as? [String: Any] else { throw BridgeError.invalid_fields }
             if fields["operation"] as? String == "driving_eta" {
@@ -465,15 +471,15 @@ struct NativeBridge {
             let oldID = (item as? EKEvent)?.eventIdentifier ?? item.calendarItemIdentifier
             affectedID = oldID
             if operation == "update_private" {
-                guard kind == "reminder", let changes = fields["changes"] as? [String: Any] else { throw BridgeError.invalid_fields }
+                guard let changes = fields["changes"] as? [String: Any] else { throw BridgeError.invalid_fields }
                 if changes["urgent"] as? Bool == true {
                     guard let reminder = item as? EKReminder, let due = reminder.dueDateComponents,
                           due.hour != nil, due.minute != nil else { throw BridgeError.invalid_fields }
                 }
                 writeStarted = true
-                let result = try privateReminder(fields)
+                let result = try privateNative(fields, helper: kind == "calendar" ? "eventkit-helper" : "reminderkit-helper")
                 guard result["verified"] as? Bool == true else { throw BridgeError.verification_failed }
-                output(["success": true, "verified": true, "item_id": oldID])
+                output(["success": true, "verified": true, "item_id": result["item_id"] as? String ?? oldID])
                 return
             }
             let scope = fields["scope"] as? String ?? "this"

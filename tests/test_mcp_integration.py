@@ -73,7 +73,7 @@ class McpIntegrationTests(unittest.IsolatedAsyncioTestCase):
                                       "personal_context_health", "personal_context_daily_summary",
                                       "apple_contact_activity", "apple_message_attachment_info",
                                       "read_apple_message_attachment_text", "read_apple_message_attachment_chunk",
-                                      "view_apple_message_image", "canvas_status", "search_canvas",
+                                      "view_apple_message_image", "canvas_status", "search_canvas", "canvas_inbox",
                                       "get_canvas_record", "upcoming_canvas_assignments",
                                       "read_canvas_file_text"}, names)
                     canvas = await session.call_tool("read_canvas_file_text", {

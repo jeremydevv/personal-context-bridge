@@ -4,6 +4,10 @@ A self-hosted MCP bridge for your own Apple, Canvas, Health, travel, and Obsidia
 context. Search encrypted archives from an MCP client, check sync freshness, and
 retrieve bounded records. Each person supplies their own accounts and devices.
 
+Optional [Instagram Saved-video search and analysis](docs/INSTAGRAM-SAVED.md)
+uses a Saved-only URL collector, separate anonymous downloads, local speech/OCR,
+encrypted media storage and timestamped image tools. It is disabled by default.
+
 This repository contains reusable code and fictional tests. It ships no personal
 archive, account credentials, installed app IDs, or maintainer deployment history.
 

@@ -8,7 +8,15 @@ copied into this distribution.
 
 SQLCipher protects archived records, indexes, changes and summaries at rest.
 Binary Messages attachments use chunked authenticated AES-GCM encryption. The
-archive key is a random 32-byte file, separate from databases and backups. Keys
+optional Saved-video archive and compressed speech/OCR search index use the same
+authenticated encrypted blob format. Source MP4s retain their downloaded bytes;
+frames regenerate temporarily rather than accumulating duplicate images. The
+Saved collector uses only the exact Saved-list GET endpoint and no redirects;
+its session remains in memory/private tmpfs and its process exits before anonymous
+media processing. Browser sign-in, encrypted keys, runtime media, Saved URLs and
+collection reports must never enter a release. See [Saved-video setup](INSTAGRAM-SAVED.md).
+
+The archive key is a random 32-byte file, separate from databases and backups. Keys
 are not protected from another process running as your user or from the operating
 system administrator. Protect the host, use full-disk encryption, restrict access,
 and keep a recovery copy of keys in a secure place separate from public code.
@@ -44,6 +52,8 @@ Before contributing or publishing a fork:
 - Review the exact staged files and package artifacts. `.gitignore` is a guardrail,
   not a detector for personal information in source strings or Git history.
 - Run `scripts/check_release.py` and review every new test fixture for provenance.
+  Use `--history` to inspect every reachable Git blob, including deleted files;
+  the checker always checks the Git index as well as working files and packages.
   Optionally provide a local denylist through `PERSONAL_CONTEXT_PRIVATE_MARKERS`
   (newline-separated strings); the checker reports paths/line numbers, not values.
 - Use synthetic examples, a public-safe Git author identity, and a fresh history

@@ -1,0 +1,14 @@
+[Unit]
+Description=Read-only Instagram Saved URL collection and local video processing
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/personal-context-bridge/saved-video.env
+ExecStart=%h/.local/share/personal-context-bridge/venv/bin/python -m personal_context.saved_video.sync_saved
+UMask=0077
+NoNewPrivileges=true
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=5h
+MemoryMax=4G

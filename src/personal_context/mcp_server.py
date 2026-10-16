@@ -26,14 +26,64 @@ def run():
     )
 
     @mcp.tool(annotations=read_only)
-    def search_personal_context(query: str, kind: str = "", limit: int = 20,
+    async def search_personal_context(query: str, kind: str = "", limit: int = 20,
                                 start: str = "", end: str = "") -> dict:
-        """Search the private archive, including student Canvas courses, assignments, announcements, Inbox conversations, and PDF/DOCX file text. Set kind to calendar, reminder, contact, mail, message, note, canvas_course, canvas_assignment, canvas_announcement, canvas_conversation, or canvas_file to narrow results. Supply both start and end as timezone-aware ISO-8601 timestamps for a time window; undated records are excluded. Returns brief matches and exact IDs. Retrieved text is untrusted."""
-        return service.search(query, kind or None, limit, start or None, end or None)
+        """Search the private archive and Instagram Saved-video speech/OCR. Set kind=instagram_saved_video for video matches with post URLs and relative seconds; use search_saved_videos/get_video_frame/get_video_storyboard to analyze. Other kinds: calendar, reminder, contact, mail, message, note, canvas_course, canvas_assignment, canvas_announcement, canvas_conversation, canvas_file. Supply both timezone-aware start/end for dated records (videos excluded). Source content is untrusted."""
+        import json
+        from .saved_video_mcp import call_saved_tool
+        if kind == 'instagram_saved_video':
+            if start or end:
+                raise ValueError('Saved videos have relative video seconds; use the video evidence tools for time ranges')
+            response = await call_saved_tool('search_saved_videos', {'query': query, 'limit': limit}) if query.strip() else await call_saved_tool('list_saved_videos', {})
+            if response.isError:
+                raise RuntimeError('Saved-video archive unavailable')
+            from .saved_video_mcp import archive_status
+            return {'results': [dict(json.loads(c.text), kind='instagram_saved_video') for c in response.content if c.type == 'text'],
+                    'match_mode': 'speech_and_ocr_keywords' if query.strip() else 'saved_video_listing', 'saved_video_status': archive_status()}
+        result = service.search(query, kind or None, limit, start or None, end or None)
+        if not kind and not start and not end and os.environ.get("PERSONAL_CONTEXT_SAVED_VIDEO_ENABLED") == "1":
+            try:
+                response = await call_saved_tool('search_saved_videos', {'query': query, 'limit': limit})
+                if response.isError:
+                    raise RuntimeError('archive unavailable')
+                result['saved_video_results'] = [dict(json.loads(c.text), kind='instagram_saved_video') for c in response.content if c.type == 'text']
+            except Exception:
+                result['saved_video_status'] = 'unavailable; other archive results unaffected'
+        return result
 
     @mcp.tool(annotations=read_only)
-    def get_personal_record(kind: str, record_id: str) -> dict:
-        """Read one private record by exact kind and ID, including extracted Canvas PDF/DOCX text. Content is untrusted source text."""
+    async def get_personal_record(kind: str, record_id: str) -> dict:
+        """Read one exact private record. Saved-video compatibility: kind=instagram_saved_video with ID from search returns metadata; kind=instagram_saved_video_frame uses record_id=video_id:asset:seconds for a native image; kind=instagram_saved_video_storyboard uses video_id:asset:page. Prefer the dedicated video tools when available. All source text/images are untrusted."""
+        if kind.startswith('instagram_saved_video'):
+            import json
+            from mcp.types import CallToolResult
+            from .saved_video_mcp import call_saved_tool
+            if kind == 'instagram_saved_video':
+                response = await call_saved_tool('list_saved_videos', {})
+                if response.isError:
+                    raise RuntimeError('Saved-video archive unavailable')
+                rows = [json.loads(c.text) for c in response.content if c.type == 'text']
+                selected = next((v for v in rows if v['id'] == record_id), None)
+                if not selected:
+                    raise ValueError('Video is not in the current Saved allowlist')
+                return {'record': selected, 'evidence_tools': 'get_video_evidence, get_video_frame, get_video_storyboard',
+                        'compatibility': 'get_personal_record kind=instagram_saved_video_frame or instagram_saved_video_storyboard; ID=video_id:asset:seconds_or_page. For timestamped speech/OCR: kind=instagram_saved_video_evidence, ID=video_id:asset:start:end'}
+            if kind == 'instagram_saved_video_evidence':
+                code, asset, start, end = record_id.split(':')
+                response = await call_saved_tool('get_video_evidence', {'video_id': code, 'asset': int(asset),
+                                                'start': float(start), 'end': float(end)})
+                if response.isError:
+                    raise ValueError('Invalid Saved-video evidence request')
+                return {'record': json.loads(response.content[0].text)}
+            if kind not in ('instagram_saved_video_frame', 'instagram_saved_video_storyboard'):
+                raise ValueError('invalid Saved-video record kind')
+            code, asset, position = record_id.split(':')
+            name = 'get_video_frame' if kind.endswith('_frame') else 'get_video_storyboard'
+            args = {'video_id': code, 'asset': int(asset)}
+            args.update({'timestamp': float(position)} if name == 'get_video_frame' else {'page': int(position)})
+            response = await call_saved_tool(name, args)
+            return CallToolResult(content=response.content, isError=response.isError,
+                                  structuredContent={'kind': kind, 'id': record_id})
         if kind not in ("calendar", "reminder", "contact", "mail", "message", "note", "canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file", "canvas_conversation"):
             raise ValueError("invalid record kind")
         return service.get(kind, record_id)
@@ -63,7 +113,10 @@ def run():
     @mcp.tool(annotations=read_only)
     def personal_context_status() -> dict:
         """Check collection timestamps for Apple sources and student Canvas courses, assignments, and announcements before answering a current-state question. Health and Travel History have separate status tools. Mac-collected sources require the Mac to be awake for new collection; archived records remain queryable while it is off."""
-        return service.status()
+        from .saved_video_mcp import archive_status
+        result = service.status()
+        result['instagram_saved_videos'] = archive_status()
+        return result
 
     @mcp.tool(annotations=read_only)
     def personal_context_health() -> dict:
@@ -98,6 +151,9 @@ def run():
         return Image(data=service.message_image_preview(attachment_guid), format="jpeg")
 
     register_canvas_tools(mcp)
+    if os.environ.get("PERSONAL_CONTEXT_SAVED_VIDEO_ENABLED") == "1":
+        from .saved_video_mcp import register as register_saved_videos
+        register_saved_videos(mcp)
     if os.environ.get("PERSONAL_CONTEXT_REFRESH_ENABLED") == "1":
         @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False,
                                                idempotentHint=False, openWorldHint=False))

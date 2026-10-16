@@ -10,9 +10,9 @@ class CanvasCollectorTests(unittest.TestCase):
             [{'id': 8, 'name': 'Fictional assignment', 'description': '<p>Read chapter</p>',
               'due_at': '2026-01-02T00:00:00Z', 'submission': {'grade': 'A', 'score': 10}}],
             [{'id': 9, 'title': 'Fictional announcement', 'message': '<p>Welcome</p>'}],
-            [{'id': 10, 'display_name': 'sample.pdf', 'url': 'https://canvas.example.invalid/file'}]]
+            [{'id': 10, 'display_name': 'sample.pdf', 'url': 'https://canvas.example.invalid/file'}], [], []]
         batches = collect_batches(client, 'demo')
-        self.assertEqual([x['kind'] for x in batches], ['canvas_course','canvas_assignment','canvas_announcement','canvas_file'])
+        self.assertEqual([x['kind'] for x in batches], ['canvas_course','canvas_assignment','canvas_announcement','canvas_file','canvas_conversation','canvas_conversation'])
         self.assertTrue(all(x['complete'] for x in batches))
         self.assertEqual(batches[1]['records'][0]['payload']['submission']['grade'], 'A')
         self.assertEqual(batches[1]['records'][0]['body'], 'Read chapter')

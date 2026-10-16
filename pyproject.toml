@@ -16,6 +16,7 @@ dependencies = ["cryptography>=44,<51", "httpx>=0.28,<1", "ijson>=3.3,<4"]
 mcp = ["mcp>=1.12,<2.0", "sqlcipher3-binary>=0.6,<1.0; sys_platform == 'linux'", "sqlcipher3>=0.5,<1.0; sys_platform == 'darwin'"]
 images = ["Pillow>=11,<13"]
 dev = ["build>=1.2,<2"]
+videos = ["faster-whisper==1.2.1", "av>=16,<19", "Pillow>=11,<13", "yt-dlp==2026.8.19", "rapidocr-onnxruntime==1.4.4"]
 messages = ["pytypedstream==0.1.0"]
 
 [project.scripts]
@@ -23,6 +24,7 @@ personal-context-apple-writes = "personal_context.apple_write_worker:main"
 personal-context-setup = "personal_context.onboarding:main"
 personal-context-canvas = "personal_context.canvas_collect:main"
 personal-context = "personal_context.cli:entrypoint"
+personal-context-saved-sync = "personal_context.saved_video.sync_saved:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

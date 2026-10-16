@@ -6,6 +6,8 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .mac_app_lifecycle import collected_app
+
 
 SCRIPT = Path(__file__).with_name("notes_snapshot.js")
 PARTITIONS = 16
@@ -52,13 +54,14 @@ def parse_notes_snapshot(value, collected_at, limit=50000):
 
 
 def collect_notes(command="/usr/bin/osascript", limit=50000):
-    result = subprocess.run([command, "-l", "JavaScript", str(SCRIPT)],
-                            capture_output=True, text=True, timeout=900)
-    if result.returncode:
-        raise RuntimeError("Notes automation failed: " + result.stderr[-500:])
-    try:
-        value = json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise ValueError("Notes automation returned invalid JSON") from exc
-    timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    return parse_notes_snapshot(value, timestamp, limit)
+    with collected_app("Notes", command):
+        result = subprocess.run([command, "-l", "JavaScript", str(SCRIPT)],
+                                capture_output=True, text=True, timeout=900)
+        if result.returncode:
+            raise RuntimeError("Notes automation failed: " + result.stderr[-500:])
+        try:
+            value = json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Notes automation returned invalid JSON") from exc
+        timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        return parse_notes_snapshot(value, timestamp, limit)

@@ -24,3 +24,21 @@ Acceptance: a new user can run the demo after cloning without any existing
 accounts; can configure their own sources without editing personal constants;
 and receives a repository and package containing no private runtime artifacts.
 Live macOS/iPhone permission prompts must be completed on the user's own devices.
+
+## macOS app lifecycle
+
+Contacts and Notes snapshots require app automation. Collection records the
+initial running state, serializes scans per app, and quits only an app that was
+closed before collection. Cleanup also runs after read failures and timeouts;
+a failed state probe prevents collection. Apps already running stay running.
+
+Calendar and Reminders collection uses native APIs rather than launching their
+GUI apps. The authorized Apple PIM Helper used for queued writes exits with its
+CLI command. Mail collection uses the SQLite engine, Messages reads its local
+database, and Obsidian works with vault files. Canvas and phone-source ingestion
+use APIs or uploaded/exported data, so no GUI app cleanup is needed for them.
+
+Mail sending is distinct from collection: its AppleScript preflight and send
+can launch Mail and currently leave it running. Automatic quitting must account
+for asynchronous delivery before changing that behavior; the read-only snapshot
+cleanup helper deliberately supports Contacts and Notes only.

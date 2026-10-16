@@ -1,8 +1,11 @@
 import tempfile
+import json
+import subprocess
+from unittest.mock import patch
 import unittest
 from pathlib import Path
 
-from personal_context.notes_collect import PARTITIONS, parse_notes_snapshot
+from personal_context.notes_collect import PARTITIONS, parse_notes_snapshot, collect_notes
 from personal_context.store import Store
 
 
@@ -18,6 +21,54 @@ class NotesCollectorTests(unittest.TestCase):
              "createdAt": self.timestamp, "modifiedAt": self.timestamp,
              "contentAvailable": False},
         ]}
+
+    def test_collector_restores_app_lifecycle_on_success_and_failure(self):
+        # Mock only the macOS process boundary: Ubuntu cannot run osascript.
+        for already_running in (False, True):
+            for outcome in ("success", "error", "timeout", "malformed"):
+                with self.subTest(already_running=already_running, outcome=outcome):
+                    state = {"running": already_running}
+
+                    def automation(args, **kwargs):
+                        if "-e" in args:
+                            script = args[-1]
+                            if "quit()" in script:
+                                state["running"] = False
+                                return subprocess.CompletedProcess(args, 0, "", "")
+                            return subprocess.CompletedProcess(args, 0,
+                                                               str(state["running"]).lower(), "")
+                        state["running"] = True
+                        if outcome == "timeout":
+                            raise subprocess.TimeoutExpired(args, 900)
+                        return subprocess.CompletedProcess(
+                            args, 1 if outcome == "error" else 0,
+                            "invalid" if outcome == "malformed" else json.dumps(self.snapshot()),
+                            "synthetic automation failure" if outcome == "error" else "")
+
+                    with tempfile.TemporaryDirectory() as directory, patch.dict(
+                            "os.environ", {"PERSONAL_CONTEXT_DATA_DIR": directory}), patch(
+                            "personal_context.notes_collect.subprocess.run", side_effect=automation):
+                        if outcome == "success":
+                            _, counts = collect_notes()
+                            self.assertEqual(counts, {"notes": 2, "missing_bodies": 1})
+                        else:
+                            expected = {"error": RuntimeError, "timeout": subprocess.TimeoutExpired,
+                                        "malformed": ValueError}[outcome]
+                            with self.assertRaises(expected):
+                                collect_notes()
+                        self.assertEqual(state["running"], already_running)
+
+    def test_failed_state_probe_does_not_launch_or_close_notes(self):
+        def automation(args, **kwargs):
+            if "-e" not in args or "quit()" in args[-1]:
+                self.fail("Must not collect or quit when the initial app state is unknown")
+            return subprocess.CompletedProcess(args, 1, "", "probe failed")
+
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+                "os.environ", {"PERSONAL_CONTEXT_DATA_DIR": directory}), patch(
+                "personal_context.notes_collect.subprocess.run", side_effect=automation):
+            with self.assertRaises(RuntimeError):
+                collect_notes()
 
     def test_complete_snapshot_and_tombstone(self):
         with tempfile.TemporaryDirectory() as directory:

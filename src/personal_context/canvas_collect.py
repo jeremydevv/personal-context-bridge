@@ -1,5 +1,6 @@
 """Read Canvas with a user-provided API token and ingest complete snapshots."""
 import argparse
+import base64
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 import io
@@ -14,7 +15,7 @@ import xml.etree.ElementTree as ET
 import httpx
 from .store import Store
 
-MAX_FILE_BYTES = 16 * 1024 * 1024
+from .canvas_pdf import MAX_FILE_BYTES
 
 
 class TextParser(HTMLParser):
@@ -146,20 +147,26 @@ def collect_batches(client, account, *, download_files=False):
             ('file','/files?per_page=100','display_name',None)):
             records = []
             for item in client.pages(prefix + endpoint):
-                rid = identifier(item); payload = dict(item)
+                rid = identifier(item); payload = dict(item); pdf_data = None
                 title = item.get(title_key) or item.get('filename') or '(untitled)'
                 body = plain(item.get(body_key)) if body_key else ''
                 if kind == 'file':
                     payload['extraction_status'] = 'disabled'
-                    if download_files and title.lower().endswith(('.pdf','.docx')) and item.get('url'):
+                    payload['pdf_status'] = 'not_archived'
+                    filename = item.get('filename') or title
+                    if download_files and filename.lower().endswith(('.pdf','.docx')) and item.get('url'):
                         try:
-                            body = extract(client.download(item['url']), title)
+                            data = client.download(item['url'])
+                            if filename.lower().endswith('.pdf') and data.startswith(b'%PDF-'):
+                                pdf_data = base64.b64encode(data).decode('ascii')
+                                payload['pdf_status'] = 'available'
+                            body = extract(data, filename)
                             payload['extraction_status'] = 'available' if body.strip() else 'no_text'
                         except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired, zipfile.BadZipFile, ET.ParseError, httpx.HTTPError):
                             payload['extraction_status'] = 'unavailable'
                 records.append({'id':'canvas:'+account+':'+kind+':'+cid+':'+rid,
                     'title':title,'body':body,'start':item.get('due_at') if kind=='assignment' else item.get('posted_at',item.get('created_at')),
-                    'payload':payload})
+                    'payload':payload, **({'pdf_base64': pdf_data} if pdf_data is not None else {})})
             batch(kind,scope,records)
 
     # Conversation detail reads must explicitly disable Canvas's default

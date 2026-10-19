@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import json
 import os
@@ -72,6 +73,9 @@ class Store:
                 start TEXT, end TEXT, payload TEXT NOT NULL, digest TEXT NOT NULL,
                 deleted INTEGER NOT NULL DEFAULT 0, captured_at TEXT NOT NULL,
                 PRIMARY KEY (kind, id)
+            );
+            CREATE TABLE IF NOT EXISTS canvas_pdfs (
+                record_id TEXT PRIMARY KEY, data BLOB NOT NULL
             );
             CREATE TABLE IF NOT EXISTS versions (
                 version_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -193,6 +197,19 @@ class Store:
             for item in batch["records"]:
                 record_id = item["id"]
                 incoming.add(record_id)
+                if kind == "canvas_file":
+                    encoded = item.get("pdf_base64")
+                    if encoded is None:
+                        self.db.execute("DELETE FROM canvas_pdfs WHERE record_id=?", (record_id,))
+                    else:
+                        from .canvas_pdf import MAX_FILE_BYTES
+                        if not isinstance(encoded, str) or len(encoded) > 4 * ((MAX_FILE_BYTES + 2) // 3):
+                            raise ValueError("Canvas PDF exceeds size limit")
+                        data = base64.b64decode(encoded, validate=True)
+                        if len(data) > MAX_FILE_BYTES or not data.startswith(b"%PDF-"):
+                            raise ValueError("invalid Canvas PDF")
+                        self.db.execute("INSERT OR REPLACE INTO canvas_pdfs(record_id,data) VALUES(?,?)",
+                                        (record_id, data))
                 snapshot = {
                     "id": record_id, "kind": kind, "source": source, "scope": scope,
                     "title": item["title"], "body": item.get("body", ""),

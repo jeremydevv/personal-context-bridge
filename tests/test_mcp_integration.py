@@ -75,7 +75,7 @@ class McpIntegrationTests(unittest.IsolatedAsyncioTestCase):
                                       "read_apple_message_attachment_text", "read_apple_message_attachment_chunk",
                                       "view_apple_message_image", "canvas_status", "search_canvas", "canvas_inbox",
                                       "get_canvas_record", "upcoming_canvas_assignments",
-                                      "read_canvas_file_text"}, names)
+                                      "read_canvas_file_text", "canvas_pdf_info", "view_canvas_pdf_page"}, names)
                     canvas = await session.call_tool("read_canvas_file_text", {
                         "record_id": "canvas:school:file:42:88", "offset": 17,
                         "max_chars": 17})

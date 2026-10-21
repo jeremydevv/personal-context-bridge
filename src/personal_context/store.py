@@ -20,6 +20,39 @@ QUERY_STOPWORDS = frozenset({
 })
 
 
+def _calendar_window(batch):
+    """Explicit subrange authority; ordinary incomplete batches never remove data."""
+    if "calendar_window" not in batch:
+        return None
+    value = batch["calendar_window"]
+    scope = re.fullmatch(r"calendar:(.+):([0-9]{4})-([0-9]{4})", batch.get("scope", ""))
+    if (batch.get("source") != "apple-pim" or batch.get("kind") != "calendar"
+            or batch.get("complete") is not False or not scope
+            or not 0 <= int(scope[3]) - int(scope[2]) <= 2
+            or not isinstance(value, dict) or set(value) != {"start", "end"}):
+        raise ValueError("invalid authoritative calendar window")
+    try:
+        start, end = (datetime.fromisoformat(value[k].replace("Z", "+00:00")) for k in ("start", "end"))
+        if (start.tzinfo is None or end.tzinfo is None or not start < end
+                or end - start > timedelta(days=1098)):
+            raise ValueError("invalid window bounds")
+        for record in batch["records"]:
+            payload = record.get("payload", {})
+            if payload.get("calendarId") != scope[1]:
+                raise ValueError("record outside authoritative calendar")
+            native_id, native_start = payload.get("id"), payload.get("startDate")
+            if (not isinstance(native_id, str) or not native_id
+                    or not isinstance(native_start, str) or not native_start
+                    or record["start"] != native_start
+                    or record["id"] != native_id + "|" + native_start):
+                raise ValueError("inconsistent calendar occurrence identity")
+            if datetime.fromisoformat(record["start"].replace("Z", "+00:00")).tzinfo is None:
+                raise ValueError("calendar record requires an absolute start")
+    except (KeyError, TypeError, AttributeError, ValueError) as exc:
+        raise ValueError("invalid authoritative calendar window") from exc
+    return start, end
+
+
 class Store:
     def __init__(self, path, key_file=None, read_only=False):
         path = Path(path)
@@ -183,12 +216,14 @@ class Store:
                 raise ValueError("record title and body must be strings")
             if not isinstance(record.get("payload", {}), dict):
                 raise ValueError("payload must be an object")
+        _calendar_window(batch)
 
     def ingest(self, batch):
         self._validate(batch)
         if batch["kind"] == "inventory":
             return self._ingest_inventory(batch)
         kind, source, scope, timestamp = (batch[key] for key in ("kind", "source", "scope", "collected_at"))
+        window = _calendar_window(batch)
         incoming = set()
         with self.db:
             prior = self.db.execute("""
@@ -264,12 +299,20 @@ class Store:
                         VALUES(?,?,?,?,?)
                     """, ((kind, record_id, identifier, role, int(group))
                           for identifier, role, group in correspondence_identifiers(kind, item.get("payload", {}))))
-            if batch["complete"]:
-                existing = self.db.execute("SELECT id FROM records WHERE source=? AND kind=? AND scope=? AND deleted=0",
+            if batch["complete"] or window is not None:
+                existing = self.db.execute("SELECT id,start FROM records WHERE source=? AND kind=? AND scope=? AND deleted=0",
                                            (source, kind, scope)).fetchall()
                 for row in existing:
                     if row["id"] in incoming:
                         continue
+                    if window is not None:
+                        try:
+                            start = datetime.fromisoformat(row["start"].replace("Z", "+00:00"))
+                            if start.tzinfo is None or not window[0] <= start < window[1]:
+                                continue
+                        except (AttributeError, TypeError, ValueError):
+                            # Unknown or malformed old dates cannot establish range membership.
+                            continue
                     self.db.execute("UPDATE records SET deleted=1,captured_at=? WHERE kind=? AND id=?",
                                     (timestamp, kind, row["id"]))
                     self.db.execute("INSERT INTO versions(kind,id,captured_at,deleted,snapshot) VALUES(?,?,?,1,NULL)",

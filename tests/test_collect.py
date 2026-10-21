@@ -101,7 +101,8 @@ class CollectorTests(unittest.TestCase):
             if args[1] == "list":
                 return {"success": True, "calendars": [{"id": "personal"}]}
             return {"success": True, "events": [{"id": "new", "calendarId": "personal",
-                    "title": "New", "startDate": "2026-10-02T14:00:00Z"}]}
+                    "title": "New", "startDate": "2026-10-02T14:00:00Z"}],
+                    "dateRange": {"from": "2026-09-01T04:00:00Z", "to": "2026-11-02T04:59:59Z"}}
 
         with TemporaryDirectory() as directory:
             store = Store(Path(directory) / "context.sqlite3")

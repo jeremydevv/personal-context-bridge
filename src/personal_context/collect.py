@@ -3,7 +3,7 @@
 import json
 import copy
 import subprocess
-from datetime import date
+from datetime import date, datetime, timedelta
 
 
 def run_cli(args):
@@ -137,8 +137,8 @@ def collect_recent_calendar(run, calendar_ids, date_from, date_to, archive_from,
                             archive_to, collected_at, limit=50000):
     """Update recent events in the same three-year scopes as the full archive scan.
 
-    Partial batches preserve events outside this range. The daily complete scan
-    remains responsible for removals and changes to older events.
+    A successful untruncated read is authoritative only in its returned instant
+    window. Older receivers treat these batches as additive partial snapshots.
     """
     first, last = date.fromisoformat(date_from), date.fromisoformat(date_to)
     archive_first, archive_last = date.fromisoformat(archive_from), date.fromisoformat(archive_to)
@@ -163,8 +163,25 @@ def collect_recent_calendar(run, calendar_ids, date_from, date_to, archive_from,
                     raise ValueError("Apple PIM did not return a recent calendar list")
                 if len(items) >= limit:
                     raise ValueError("recent calendar read reached its limit")
+                if (value.get("complete") is False or value.get("truncated") is True
+                        or value.get("hasMore") is True
+                        or ("count" in value and value["count"] != len(items))):
+                    raise ValueError("recent calendar read is incomplete")
                 if any(not isinstance(item, dict) or item.get("calendarId") != source_id for item in items):
                     raise ValueError("Apple PIM returned an event outside the selected calendar")
+                raw_window = value.get("dateRange")
+                if not isinstance(raw_window, dict) or set(raw_window) != {"from", "to"}:
+                    raise ValueError("recent calendar read requires exact query bounds")
+                try:
+                    bounds = [datetime.fromisoformat(raw_window[k].replace("Z", "+00:00"))
+                              for k in ("from", "to")]
+                    if (any(x.tzinfo is None for x in bounds) or not bounds[0] < bounds[1]
+                            or bounds[1] - bounds[0] > timedelta(days=1098)
+                            or abs((bounds[0].date() - window_first).days) > 1
+                            or abs((bounds[1].date() - window_last).days) > 1):
+                        raise ValueError("invalid recent calendar query bounds")
+                except (TypeError, AttributeError, ValueError) as exc:
+                    raise ValueError("invalid recent calendar query bounds") from exc
                 records = {}
                 for item in items:
                     record = _record("calendar", item)
@@ -173,6 +190,7 @@ def collect_recent_calendar(run, calendar_ids, date_from, date_to, archive_from,
                 batches.append({"schema": 1, "source": "apple-pim", "kind": "calendar",
                                 "scope": "calendar:" + source_id + ":" + str(year) + "-" + str(end_year),
                                 "collected_at": collected_at, "complete": False,
+                                "calendar_window": {"start": raw_window["from"], "end": raw_window["to"]},
                                 "records": list(records.values())})
             year = end_year + 1
     return batches

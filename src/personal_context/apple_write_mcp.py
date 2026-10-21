@@ -65,10 +65,12 @@ def register(mcp, source):
         mcp.tool(name='inspect_native_apple_calendar_event', annotations=read)(inspect_event)
 
         def update_event(request_key: str, item_id: str, occurrence_start_at: str,
-                         expected_revision: str, scope: str, changes: CalendarChanges, automatic_driving: bool = True) -> dict:
-            """Queue a precise native event patch after user authorization. Inspect live first; pass its revision. Absent fields are preserved; empty notes/location/url clears, alerts=[] clears alerts, recurrence=null removes repeat. Dates are offset ISO instants; timezone is an IANA name. Calendar accepts an exact existing destination ID (preferred) or unique name. Scope 'this'/'future' must be explicit; never infer a series-wide change. Alerts are minutes before start. Physical location/start changes automatically recalculate car travel from fresh phone location unless automatic_driving=false is explicitly requested. All-day boundaries must be local midnights with exclusive end. Queued is not completion; revision conflict means inspect again. Use dedicated attendee/attachment tools for those native fields."""
+                         expected_revision: str, scope: str, changes: CalendarChanges, automatic_driving: bool = True,
+                         allow_invitation_delivery: bool = False) -> dict:
+            """Queue a precise native event patch after user authorization. Inspect live first; pass its revision. Absent fields are preserved; empty notes/location/url clears, alerts=[] clears alerts, recurrence=null removes repeat. For End Repeat, use only recurrence_end={date:'YYYY-MM-DD', timezone:'IANA name'} with scope='future'; the date is inclusive and existing rule selectors are preserved. This is an end-only patch, not recurrence replacement. Dates are offset ISO instants; timezone is an IANA name. Calendar accepts an exact existing destination ID (preferred) or unique name. Scope 'this'/'future' must be explicit; never infer a series-wide change. Alerts are minutes before start. Physical location/start changes automatically recalculate car travel from fresh phone location unless automatic_driving=false is explicitly requested. All-day boundaries must be local midnights with exclusive end. Queued is not completion; revision conflict means inspect again. Existing participants may be notified by ordinary edits; require explicit notification consent before allow_invitation_delivery=true. Use dedicated attendee/attachment tools for those native fields."""
             fields = dict(operation='update', item_id=item_id, occurrence_start_at=occurrence_start_at,
                           expected_revision=expected_revision, scope=scope, changes=changes)
+            if allow_invitation_delivery: fields['allow_invitation_delivery'] = True
             routed = automatic_driving and bool(set(changes) & {'location', 'start_at', 'all_day'})
             if routed:
                 old = queue.existing_job(source, request_key, fields, automatic_identity=True)
@@ -89,10 +91,12 @@ def register(mcp, source):
         mcp.tool(name='update_apple_calendar_event', annotations=edit)(update_event)
 
         def delete_event(request_key: str, item_id: str, occurrence_start_at: str,
-                         expected_revision: str, scope: str) -> dict:
-            """Queue deletion of an EXISTING native event after user authorization. Unlike cancel_apple_write_job this removes the Apple item. Inspect live first; pass exact native ID, original occurrence start, revision and explicit scope 'this' or 'future'. Never delete by title. Queue acceptance is not deletion; check job status. Stale revisions fail without deleting."""
-            return queue.queue_job(source, request_key, dict(operation='delete', item_id=item_id,
-                occurrence_start_at=occurrence_start_at, expected_revision=expected_revision, scope=scope))
+                         expected_revision: str, scope: str, allow_invitation_delivery: bool = False) -> dict:
+            """Queue deletion of an EXISTING native event after user authorization. Unlike cancel_apple_write_job this removes the Apple item. Inspect live first; pass exact native ID, original occurrence start, revision and explicit scope 'this' or 'future'. Never delete by title. Queue acceptance is not deletion; check job status. Stale revisions fail without deleting. Existing participants may receive cancellations: require explicit notification consent before allow_invitation_delivery=true."""
+            fields = dict(operation='delete', item_id=item_id, occurrence_start_at=occurrence_start_at,
+                          expected_revision=expected_revision, scope=scope)
+            if allow_invitation_delivery: fields['allow_invitation_delivery'] = True
+            return queue.queue_job(source, request_key, fields)
         mcp.tool(name='delete_apple_calendar_event', annotations=edit)(delete_event)
 
         def driving_event(request_key: str, item_id: str, occurrence_start_at: str, expected_revision: str) -> dict:
@@ -194,6 +198,10 @@ def register(mcp, source):
                     private_framework_fields=['attendees', 'attachments', 'travel_duration'] if source == 'calendar' else ['native_urgent_alarm', 'subtasks', 'synced_tags', 'image_attachments'],
                     attachment_limits=dict(per_file_bytes=2097152, batch_bytes=4194304, max_files=5),
                     unsupported=['continuous_driving_recalculation'] if source == 'calendar' else ['pdf_attachments'],
+                    constraints=dict(all_day_timezone='Mac local timezone; foreign-zone floating days rejected',
+                        recurrence_replacement='frequency/interval/count/until plus weekly weekdays; use recurrence_end to preserve selectors',
+                        recurrence_end='future scope; non-detached existing series; at most four years and 10000 snapshot events',
+                        invitation_delivery='explicit per-action consent; account capabilities still apply'),
                     delivery='encrypted Ubuntu queue to authorized Mac; offline Mac delays writes')
     mcp.tool(name='apple_pim_capabilities', annotations=read)(capabilities)
 

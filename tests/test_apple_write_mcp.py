@@ -99,3 +99,19 @@ class WriteMcpTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(result.isError, str(result.content))
             status = await session.call_tool('apple_write_job_status', {'job_id':json.loads(result.content[0].text)['job_id']})
             self.assertNotIn('focus', status.content[0].text)
+
+    async def test_end_repeat_and_consent_are_exposed_and_queue_safely(self):
+        async with self.session() as session:
+            tools = {t.name:t for t in (await session.list_tools()).tools}
+            schema = tools['update_apple_calendar_event'].inputSchema
+            self.assertIn('recurrence_end', schema['$defs']['CalendarChanges']['properties'])
+            self.assertIn('allow_invitation_delivery', schema['properties'])
+            result = await session.call_tool('update_apple_calendar_event',dict(request_key='end-repeat',
+                item_id='fictional-series',occurrence_start_at='2026-10-20T08:00:00-04:00',
+                expected_revision='a'*64,scope='future',changes={'recurrence_end':{'date':'2027-05-28','timezone':'America/New_York'}}))
+            self.assertFalse(result.isError, str(result.content))
+            self.assertEqual(json.loads(result.content[0].text)['state'],'queued')
+            capabilities = await session.call_tool('apple_pim_capabilities',{})
+            data = json.loads(capabilities.content[0].text)
+            self.assertIn('recurrence_end', data['fields'])
+            self.assertIn('constraints',data)

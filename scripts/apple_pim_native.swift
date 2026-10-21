@@ -42,9 +42,11 @@ func drivingEstimate(_ fields: [String: Any]) async throws -> [String: Any] {
 }
 
 func date(_ value: Any?) throws -> Date {
-    guard let value = value as? String, let result = iso.date(from: value) else {
-        throw BridgeError.invalid_fields
-    }
+    guard let value = value as? String else { throw BridgeError.invalid_fields }
+    if let result = iso.date(from: value) { return result }
+    let fractional = ISO8601DateFormatter()
+    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    guard let result = fractional.date(from: value) else { throw BridgeError.invalid_fields }
     return result
 }
 
@@ -154,6 +156,16 @@ func ruleRecord(_ rule: EKRecurrenceRule) -> [String: Any] {
     return result
 }
 
+// EventKit represents an all-day end as the final second of its last day.
+// The MCP contract uses an exclusive midnight boundary in the Mac's local zone.
+func exclusiveEnd(_ event: EKEvent) -> Date {
+    let end = event.endDate!
+    let next = end.addingTimeInterval(1)
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = event.timeZone ?? .current
+    return event.isAllDay && next == calendar.startOfDay(for: next) ? next : end
+}
+
 func record(_ item: EKCalendarItem) throws -> [String: Any] {
     var result: [String: Any] = [
         "item_id": (item as? EKEvent)?.eventIdentifier ?? item.calendarItemIdentifier,
@@ -175,7 +187,7 @@ func record(_ item: EKCalendarItem) throws -> [String: Any] {
             result["longitude"] = location.coordinate.longitude
         }
         result["start_at"] = iso.string(from: event.startDate)
-        result["end_at"] = iso.string(from: event.endDate)
+        result["end_at"] = iso.string(from: exclusiveEnd(event))
         result["occurrence_start_at"] = iso.string(from: event.startDate)
         result["location"] = event.location ?? ""
         result["all_day"] = event.isAllDay
@@ -209,9 +221,63 @@ func revision(_ item: EKCalendarItem) throws -> String {
     return SHA256.hash(data: try encoded(value)).map { String(format: "%02x", $0) }.joined()
 }
 
+func recurrenceCutoff(_ raw: Any?, startingAt start: Date) throws -> Date {
+    guard let value = raw as? [String: Any], Set(value.keys) == ["date", "timezone"],
+          let text = value["date"] as? String, text.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil,
+          let name = value["timezone"] as? String, let zone = TimeZone(identifier: name) else { throw BridgeError.invalid_fields }
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.timeZone = zone
+    formatter.dateFormat = "yyyy-MM-dd"
+    formatter.isLenient = false
+    guard let day = formatter.date(from: text), formatter.string(from: day) == text else { throw BridgeError.invalid_fields }
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = zone
+    guard let next = calendar.date(byAdding: .day, value: 1, to: day),
+          calendar.startOfDay(for: next) == next else { throw BridgeError.invalid_fields }
+    guard let maximum = calendar.date(byAdding:.year,value:4,to:start), next <= maximum else { throw BridgeError.unsupported_capability }
+    let cutoff = next.addingTimeInterval(-1)
+    guard cutoff >= start else { throw BridgeError.invalid_fields }
+    return cutoff
+}
+
+// Snapshot actual occurrences, not reconstructed RRULE expansions. Deleted
+// occurrences stay absent and detached/edited exceptions keep their own content.
+func occurrenceSnapshot(_ events: [EKEvent]) throws -> [String] {
+    guard events.count <= 10000 else { throw BridgeError.unsupported_capability }
+    let values = try events.map { event -> String in
+        let value: [String: Any] = ["start": iso.string(from:event.startDate), "end":iso.string(from:exclusiveEnd(event)),
+            "title":event.title ?? "", "notes":event.notes ?? "", "url":event.url?.absoluteString ?? "",
+            "location":event.location ?? "", "calendar":event.calendar.calendarIdentifier,
+            "all_day":event.isAllDay, "timezone":event.timeZone?.identifier ?? "", "availability":event.availability.rawValue,
+            "alarms":try (event.alarms ?? []).map { String(data:try encoded(alarmRecord($0)),encoding:.utf8)! }.sorted(),
+            "attendees":(event.attendees ?? []).map { $0.url.absoluteString }.sorted()]
+        return String(data:try encoded(value),encoding:.utf8)!
+    }.sorted()
+    guard values.reduce(0, { $0 + $1.utf8.count }) <= 8388608 else { throw BridgeError.unsupported_capability }
+    return values
+}
+
+func verifyOccurrenceSnapshot(_ before: [String], _ after: [String]) throws {
+    guard before == after else { throw BridgeError.verification_failed }
+}
+
+func requireInvitationConsent(_ hasAttendees: Bool, _ consent: Any?) throws {
+    if hasAttendees && consent as? Bool != true { throw BridgeError.unsupported_capability }
+}
+
+func endRecurrence(_ raw: Any?, _ event: EKEvent) throws {
+    guard !event.isDetached, let rules = event.recurrenceRules, !rules.isEmpty else { throw BridgeError.unsupported_capability }
+    let cutoff = try recurrenceCutoff(raw, startingAt: event.startDate)
+    // Mutate only recurrenceEnd on the existing native rule objects. Never
+    // remove/add/reconstruct rules: that discards selectors and can lose exceptions.
+    for rule in rules { rule.recurrenceEnd = EKRecurrenceEnd(end: cutoff) }
+}
+
 func applyFields(_ changes: [String: Any], _ item: EKCalendarItem, _ kind: String) throws {
     let common: Set<String> = ["title", "notes", "url", "alerts", "recurrence", "timezone"]
-    let allowed = common.union(kind == "calendar" ? ["start_at", "end_at", "location", "calendar", "all_day", "availability", "driving"] : ["due_at", "list_name", "priority", "completed", "location_alarm"])
+    let allowed = common.union(kind == "calendar" ? ["start_at", "end_at", "location", "calendar", "all_day", "availability", "driving", "recurrence_end"] : ["due_at", "list_name", "priority", "completed", "location_alarm"])
     guard Set(changes.keys).isSubset(of: allowed) else { throw BridgeError.unsupported_capability }
     if let value = changes["title"] { item.title = try string(value) }
     if let value = changes["notes"] { item.notes = try string(value) }
@@ -224,26 +290,45 @@ func applyFields(_ changes: [String: Any], _ item: EKCalendarItem, _ kind: Strin
             item.url = url
         }
     }
+    let event = item as? EKEvent
+    let desiredAllDay = changes["all_day"] as? Bool ?? event?.isAllDay ?? false
+    let timingChanged = !Set(changes.keys).isDisjoint(with: ["start_at", "end_at", "timezone", "all_day"])
+    let originalStart = event?.startDate
+    let originalEnd = event.map(exclusiveEnd)
+    // Setting either dates or timeZone can clear all-day mode. Restore that mode
+    // only after validating the approved exclusive boundaries.
+    if let event = event, timingChanged { event.isAllDay = false }
     if let value = changes["timezone"] {
         guard let zone = TimeZone(identifier: try string(value)) else { throw BridgeError.invalid_fields }
         item.timeZone = zone
     }
-    if let event = item as? EKEvent {
+    if let event = event {
         if let value = changes["start_at"] { event.startDate = try date(value) }
+        else if timingChanged { event.startDate = originalStart }
         if let value = changes["end_at"] { event.endDate = try date(value) }
-        guard event.endDate > event.startDate else { throw BridgeError.invalid_fields }
+        else if timingChanged { event.endDate = originalEnd }
+        guard exclusiveEnd(event) > event.startDate else { throw BridgeError.invalid_fields }
         if let value = changes["location"] { event.location = try string(value) }
-        if let value = changes["all_day"] as? Bool { event.isAllDay = value }
-        if event.isAllDay {
+        if desiredAllDay {
             var calendar = Calendar(identifier: .gregorian)
             calendar.timeZone = event.timeZone ?? .current
+            // All-day EventKit objects float in the Mac timezone after the mode
+            // setter clears timeZone. Do not silently shift a foreign-zone day.
+            guard calendar.timeZone == TimeZone.current else { throw BridgeError.unsupported_capability }
             guard event.startDate == calendar.startOfDay(for: event.startDate),
-                  event.endDate == calendar.startOfDay(for: event.endDate) else { throw BridgeError.invalid_fields }
+                  exclusiveEnd(event) == calendar.startOfDay(for: exclusiveEnd(event)) else { throw BridgeError.invalid_fields }
+        }
+        if timingChanged { event.isAllDay = desiredAllDay }
+        if let value = changes["recurrence_end"] {
+            guard changes.count == 1 else { throw BridgeError.invalid_fields }
+            try endRecurrence(value, event)
         }
         if let value = changes["calendar"] { event.calendar = try destination(kind, try string(value)) }
         if let value = changes["availability"] as? String {
             let values: [String: EKEventAvailability] = ["busy": .busy, "free": .free, "tentative": .tentative, "unavailable": .unavailable]
             guard let availability = values[value] else { throw BridgeError.invalid_fields }
+            let masks: [String: EKCalendarEventAvailabilityMask] = ["busy":.busy, "free":.free, "tentative":.tentative, "unavailable":.unavailable]
+            guard let mask = masks[value], event.calendar.supportedEventAvailabilities.contains(mask) else { throw BridgeError.unsupported_capability }
             event.availability = availability
         }
         if let value = changes["driving"] {
@@ -340,7 +425,17 @@ func applyFields(_ changes: [String: Any], _ item: EKCalendarItem, _ kind: Strin
                 end = EKRecurrenceEnd(occurrenceCount: count)
             }
             if let until = value["until"] { end = EKRecurrenceEnd(end: try date(until)) }
-            item.addRecurrenceRule(EKRecurrenceRule(recurrenceWith: nativeFrequency, interval: interval, end: end))
+            var days: [EKRecurrenceDayOfWeek]?
+            if let rawDays = value["weekdays"] {
+                let names: [String: EKWeekday] = ["monday":.monday,"tuesday":.tuesday,"wednesday":.wednesday,"thursday":.thursday,"friday":.friday,"saturday":.saturday,"sunday":.sunday]
+                guard frequency == "weekly", let input = rawDays as? [String], (1...7).contains(input.count), Set(input).count == input.count else { throw BridgeError.invalid_fields }
+                days = try input.map { name in
+                    guard let day = names[name] else { throw BridgeError.invalid_fields }
+                    return EKRecurrenceDayOfWeek(day)
+                }
+            }
+            item.addRecurrenceRule(EKRecurrenceRule(recurrenceWith:nativeFrequency,interval:interval,
+                daysOfTheWeek:days,daysOfTheMonth:nil,monthsOfTheYear:nil,weeksOfTheYear:nil,daysOfTheYear:nil,setPositions:nil,end:end))
         }
     }
 }
@@ -373,8 +468,9 @@ func verify(_ changes: [String: Any], _ item: EKCalendarItem, _ kind: String,
             throw BridgeError.verification_failed
         }
     }
-    if let zone = changes["timezone"] as? String, item.timeZone?.identifier != TimeZone(identifier: zone)?.identifier {
-        throw BridgeError.verification_failed
+    if let zone = changes["timezone"] as? String {
+        let actual = (item as? EKEvent)?.isAllDay == true ? (item.timeZone ?? .current) : item.timeZone
+        guard actual == TimeZone(identifier: zone) else { throw BridgeError.verification_failed }
     }
     if let driving = changes["driving"], let event = item as? EKEvent {
         let expected = (driving as? [String: Any])?["seconds"] as? Int ?? 0
@@ -385,7 +481,7 @@ func verify(_ changes: [String: Any], _ item: EKCalendarItem, _ kind: String,
                   abs(point.coordinate.longitude - (route["longitude"] as? Double ?? 999)) < 0.00001 else { throw BridgeError.verification_failed }
         }
     }
-    if changes["recurrence"] != nil {
+    if changes["recurrence"] != nil || changes["recurrence_end"] != nil {
         let actual = try (item.recurrenceRules ?? []).map { String(data: try encoded(ruleRecord($0)), encoding: .utf8)! }.sorted()
         guard actual == expectedRules else { throw BridgeError.verification_failed }
     }
@@ -414,6 +510,7 @@ func timing(_ item: EKCalendarItem) -> [String: Any] {
             "alert_late": first.map { $0 < Date() } ?? false, "warnings": early ? ["earlier_alarm_display"] : []]
 }
 
+#if !APPLE_PIM_TESTS
 @main
 struct NativeBridge {
     static func main() async {
@@ -445,7 +542,8 @@ struct NativeBridge {
                 let defaultID = kind == "calendar" ? store.defaultCalendarForNewEvents?.calendarIdentifier : store.defaultCalendarForNewReminders()?.calendarIdentifier
                 output(["success": true, "destinations": store.calendars(for: type).map {
                     ["id": $0.calendarIdentifier, "title": $0.title, "account": $0.source?.title ?? "",
-                     "writable": $0.allowsContentModifications, "default": $0.calendarIdentifier == defaultID] as [String: Any]
+                     "writable": $0.allowsContentModifications, "default": $0.calendarIdentifier == defaultID,
+                     "availability_mask": $0.supportedEventAvailabilities.rawValue] as [String: Any]
                 }])
                 return
             }
@@ -482,6 +580,9 @@ struct NativeBridge {
                 output(["success": true, "verified": true, "item_id": result["item_id"] as? String ?? oldID])
                 return
             }
+            if let event = item as? EKEvent {
+                try requireInvitationConsent(event.hasAttendees, fields["allow_invitation_delivery"])
+            }
             let scope = fields["scope"] as? String ?? "this"
             guard ["this", "future"].contains(scope) else { throw BridgeError.invalid_fields }
             let span: EKSpan = scope == "future" ? .futureEvents : .thisEvent
@@ -514,6 +615,21 @@ struct NativeBridge {
                 guard let patch = fields["changes"] as? [String: Any], !patch.isEmpty else { throw BridgeError.invalid_fields }
                 changes = patch
             }
+            if changes["recurrence_end"] != nil && (kind != "calendar" || operation != "update" || scope != "future" || changes.count != 1) {
+                throw BridgeError.invalid_fields
+            }
+            var recurrenceWindow: (Date, Date, String)?
+            var previousOccurrences: [String]?
+            if let raw = changes["recurrence_end"], let event = item as? EKEvent {
+                let cutoff = try recurrenceCutoff(raw, startingAt:event.startDate)
+                // EventKit event predicates are bounded to four years. Fail closed
+                // instead of silently verifying a truncated window.
+                let start = event.startDate.addingTimeInterval(-1)
+                let end = cutoff.addingTimeInterval(1)
+                recurrenceWindow = (start, end, event.calendar.calendarIdentifier)
+                let predicate = store.predicateForEvents(withStart:start, end:end, calendars:[event.calendar])
+                previousOccurrences = try occurrenceSnapshot(store.events(matching:predicate))
+            }
             var previousDue: Date?
             if let reminder = item as? EKReminder, let components = reminder.dueDateComponents {
                 previousDue = components.date ?? Calendar(identifier: .gregorian).date(from: components)
@@ -530,6 +646,11 @@ struct NativeBridge {
             if let event = item as? EKEvent { target["occurrence_start_at"] = iso.string(from: event.startDate) }
             store.reset()
             let saved = try findItem(kind, target)
+            if let window = recurrenceWindow, let before = previousOccurrences,
+               let calendar = store.calendar(withIdentifier:window.2) {
+                let predicate = store.predicateForEvents(withStart:window.0,end:window.1,calendars:[calendar])
+                try verifyOccurrenceSnapshot(before, occurrenceSnapshot(store.events(matching:predicate)))
+            } else if recurrenceWindow != nil { throw BridgeError.verification_failed }
             try verify(changes, saved, kind, expectedRules: expectedRules, expectedLocationAlarms: expectedLocationAlarms, previousDue: previousDue)
             output(["success": true, "verified": true, "item_id": newID, "revision": try revision(saved), "timing": timing(saved)])
         } catch {
@@ -544,3 +665,5 @@ struct NativeBridge {
         if let data = try? encoded(value), let text = String(data: data, encoding: .utf8) { print(text) }
     }
 }
+
+#endif

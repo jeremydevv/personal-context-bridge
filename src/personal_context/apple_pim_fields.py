@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 COMMON = {'title', 'notes', 'url', 'alerts', 'recurrence', 'timezone'}
-EVENT = COMMON | {'start_at', 'end_at', 'location', 'calendar', 'all_day', 'availability', 'driving'}
+EVENT = COMMON | {'start_at', 'end_at', 'location', 'calendar', 'all_day', 'availability', 'driving', 'recurrence_end'}
 REMINDER = COMMON | {'due_at', 'list_name', 'priority', 'completed', 'location_alarm'}
 EXTENDED = {'location', 'url', 'alerts', 'recurrence', 'timezone', 'all_day',
             'availability', 'priority', 'completed', 'location_alarm', 'driving'}
@@ -57,9 +57,19 @@ def changes(kind, fields):
             if not isinstance(value, list) or len(value) > 5 or any(type(v) is not int or not 0 <= v <= 10080 for v in value):
                 raise ValueError('alerts must be at most five minute offsets, or [] to clear')
             if len(set(value)) != len(value): raise ValueError('duplicate alerts')
+        elif key == 'recurrence_end':
+            from datetime import date
+            if set(fields) != {'recurrence_end'} or not isinstance(value, dict) or set(value) != {'date', 'timezone'}:
+                raise ValueError('recurrence_end must be an end-only date/timezone patch')
+            if not isinstance(value['date'], str) or not re.fullmatch(r'\d{4}-\d\d-\d\d', value['date']):
+                raise ValueError('end date must be YYYY-MM-DD')
+            date.fromisoformat(value['date'])
+            text(value['timezone'], 'timezone', empty=False)
+            try: ZoneInfo(value['timezone'])
+            except (ValueError, ZoneInfoNotFoundError) as exc: raise ValueError('unknown end timezone') from exc
         elif key == 'recurrence':
             if value is None: continue
-            if not isinstance(value, dict) or set(value) - {'frequency', 'interval', 'count', 'until'}:
+            if not isinstance(value, dict) or set(value) - {'frequency', 'interval', 'count', 'until', 'weekdays'}:
                 raise ValueError('invalid recurrence')
             if value.get('frequency') not in ('daily', 'weekly', 'monthly', 'yearly'):
                 raise ValueError('invalid recurrence frequency')
@@ -67,6 +77,11 @@ def changes(kind, fields):
                 raise ValueError('invalid recurrence interval')
             if 'count' in value and (type(value['count']) is not int or not 1 <= value['count'] <= 10000):
                 raise ValueError('invalid recurrence count')
+            if 'weekdays' in value:
+                days = value['weekdays']
+                allowed_days = ('monday','tuesday','wednesday','thursday','friday','saturday','sunday')
+                if value['frequency'] != 'weekly' or not isinstance(days,list) or not 1 <= len(days) <= 7 or any(not isinstance(d,str) or d not in allowed_days for d in days) or len(set(days)) != len(days):
+                    raise ValueError('weekdays must be distinct weekly weekday names')
             if 'until' in value: timestamp(value['until'])
             if 'until' in value and 'count' in value: raise ValueError('use count or until')
         elif key == 'location_alarm':
@@ -92,7 +107,9 @@ def edit(kind, payload):
     allowed = required | {'changes'}
     if kind == 'calendar':
         required |= {'occurrence_start_at', 'scope'}
-        allowed |= {'occurrence_start_at', 'scope'}
+        allowed |= {'occurrence_start_at', 'scope', 'allow_invitation_delivery'}
+        if 'allow_invitation_delivery' in payload and type(payload['allow_invitation_delivery']) is not bool:
+            raise ValueError('invitation delivery consent must be a boolean')
     if not required <= set(payload) or set(payload) - allowed:
         raise ValueError('native edit requires ID, live revision, and calendar occurrence/scope')
     text(payload['item_id'], 'native ID', empty=False)
@@ -116,6 +133,12 @@ def edit(kind, payload):
                 if 'notes' in child: text(child['notes'], 'subtask notes', 20000)
         return payload.copy()
     if payload['operation'] == 'update':
+        if isinstance(payload.get('changes'), dict) and 'recurrence_end' in payload['changes']:
+            patch = changes(kind, payload['changes'])['recurrence_end']
+            if kind != 'calendar' or payload['scope'] != 'future':
+                raise ValueError('end-only recurrence changes require calendar future scope')
+            if patch['date'] < timestamp(payload['occurrence_start_at']).astimezone(ZoneInfo(patch['timezone'])).date().isoformat():
+                raise ValueError('end date precedes the selected occurrence')
         return payload | {'changes': changes(kind, payload.get('changes'))}
     if payload['operation'] != 'delete' or 'changes' in payload: raise ValueError('invalid operation')
     return payload.copy()

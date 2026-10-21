@@ -30,6 +30,9 @@ An offline Mac delays writes even though Ubuntu and the MCP remain available.
 Native state readback does not prove phone synchronization or notification
 delivery. Cancellation of an outbox job never deletes an existing Apple item.
 
+The source repair and exact verification/deployment limits are documented in
+[the Calendar write coverage audit](CALENDAR-WRITE-AUDIT.md).
+
 ## Calendar
 
 Tools: `queue_apple_calendar_event`, `inspect_native_apple_calendar_event`,
@@ -114,6 +117,26 @@ private native temporary files; receipts never include them. Native validation
 decodes images with pixel limits and requires a readable, unencrypted PDF.
 Missing cloud bytes are reported unavailable rather than silently downloaded
 from an arbitrary URL. Native readback does not establish cross-device sync.
+
+### End-only repeat dates
+
+To retain an existing recurrence pattern, do not replace `recurrence`. Use an
+update with exact ID, occurrence, fresh revision, `scope: "future"`, and only:
+
+```json
+{"recurrence_end":{"date":"2031-05-30","timezone":"America/New_York"}}
+```
+
+The date includes that entire local day. Existing native rule selectors remain
+intact. Detached events and nonrecurring items are rejected. The bounded
+occurrence snapshot before/after save detects changes to prior excluded/edited
+occurrences within the selected window; a post-save mismatch requires review
+and is not automatically retried. Unsaved tests do not establish provider
+persistence. See the audit for limits and deployment status.
+
+Ordinary event update/delete now accepts `allow_invitation_delivery` (default
+false). Set it true only with explicit consent to notify existing participants;
+this does not expand organizer or calendar permissions.
 
 ## Reminders
 

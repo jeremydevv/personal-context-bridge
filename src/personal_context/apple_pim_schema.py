@@ -10,6 +10,7 @@ class Recurrence(TypedDict, total=False):
     interval: int
     count: int
     until: str
+    weekdays: list[Literal['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']]
 
 
 @with_config(ConfigDict(extra='forbid', strict=True))
@@ -19,6 +20,12 @@ class LocationAlarm(TypedDict):
     longitude: float
     radius: float
     proximity: Literal['arrive', 'leave']
+
+
+@with_config(ConfigDict(extra='forbid', strict=True))
+class RecurrenceEnd(TypedDict):
+    date: str
+    timezone: str
 
 
 @with_config(ConfigDict(extra='forbid', strict=True))
@@ -34,6 +41,7 @@ class CalendarChanges(TypedDict, total=False):
     calendar: str
     alerts: list[int]
     recurrence: Recurrence | None
+    recurrence_end: RecurrenceEnd
     availability: Literal['busy', 'free', 'tentative', 'unavailable']
 
 

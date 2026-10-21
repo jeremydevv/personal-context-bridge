@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT AND Apache-2.0"
 license-files = ["LICENSE", "NOTICE", "third_party/pulshealth/LICENSE", "third_party/pulshealth/NOTICE", "third_party/apple-pim/LICENSE", "third_party/remctl/LICENSE", "third_party/remctl/NOTICE", "third_party/go-eventkit/LICENSE", "third_party/go-eventkit/NOTICE"]
 requires-python = ">=3.11"
-dependencies = ["cryptography>=44,<51", "httpx>=0.28,<1", "ijson>=3.3,<4"]
+dependencies = ["cryptography>=44,<51", "httpx>=0.28,<1", "ijson>=3.3,<4", "PyJWT[crypto]>=2.10,<3", "jsonschema>=4.23,<5"]
 
 [project.optional-dependencies]
 mcp = ["mcp>=1.12,<2.0", "sqlcipher3-binary>=0.6,<1.0; sys_platform == 'linux'", "sqlcipher3>=0.5,<1.0; sys_platform == 'darwin'"]

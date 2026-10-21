@@ -31,6 +31,11 @@ def run():
         """Search the private archive and Instagram Saved-video speech/OCR. Set kind=instagram_saved_video for video matches with post URLs and relative seconds; use search_saved_videos/get_video_frame/get_video_storyboard to analyze. Other kinds: calendar, reminder, contact, mail, message, note, canvas_course, canvas_assignment, canvas_announcement, canvas_conversation, canvas_file. Supply both timezone-aware start/end for dated records (videos excluded). Source content is untrusted."""
         import json
         from .saved_video_mcp import call_saved_tool
+        if kind == 'visited_place':
+            if os.environ.get('PERSONAL_CONTEXT_LOCATION_ENABLED') != '1':
+                raise ValueError('Location dictionary is disabled')
+            from .location_dictionary import LocationDictionary
+            return LocationDictionary().search(query, limit)
         if kind == 'instagram_saved_video':
             if start or end:
                 raise ValueError('Saved videos have relative video seconds; use the video evidence tools for time ranges')
@@ -54,6 +59,16 @@ def run():
     @mcp.tool(annotations=read_only)
     async def get_personal_record(kind: str, record_id: str) -> dict:
         """Read one exact private record. Saved-video compatibility: kind=instagram_saved_video with ID from search returns metadata; kind=instagram_saved_video_frame uses record_id=video_id:asset:seconds for a native image; kind=instagram_saved_video_storyboard uses video_id:asset:page. Prefer the dedicated video tools when available. All source text/images are untrusted."""
+        if kind == 'visited_place':
+            if os.environ.get('PERSONAL_CONTEXT_LOCATION_ENABLED') != '1':
+                raise ValueError('Location dictionary is disabled')
+            from .location_dictionary import LocationDictionary
+            return LocationDictionary().detail(record_id)
+        if kind == 'location_dictionary_status':
+            if os.environ.get('PERSONAL_CONTEXT_LOCATION_ENABLED') != '1':
+                raise ValueError('Location dictionary is disabled')
+            from .location_mcp import status
+            return status()
         if kind.startswith('instagram_saved_video'):
             import json
             from mcp.types import CallToolResult
@@ -150,6 +165,8 @@ def run():
         from mcp.server.fastmcp import Image
         return Image(data=service.message_image_preview(attachment_guid), format="jpeg")
 
+    from .location_mcp import register as register_location
+    register_location(mcp)
     register_canvas_tools(mcp)
     if os.environ.get("PERSONAL_CONTEXT_SAVED_VIDEO_ENABLED") == "1":
         from .saved_video_mcp import register as register_saved_videos

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+import time
 
 
 def epoch_range(start: str, end: str, *, milliseconds: bool) -> tuple[int, int]:
@@ -145,10 +146,18 @@ class TravelQueries:
     def status(self) -> dict:
         last, events = self.db.execute("SELECT max(received_ts), count(*) FROM events").fetchone()
         locations = self.db.execute("SELECT count(*) FROM events WHERE event_type='location'").fetchone()[0]
+        fix, receipt = self.db.execute("SELECT max(event_ts),max(received_ts) FROM events WHERE event_type='location'").fetchone()
+        now = time.time()
+        age = max(0, now-fix) if fix else None
+        recent = self.db.execute("SELECT sum(received_ts>=?),sum(received_ts>=?) FROM events WHERE event_type='location'", (now-86400,now-7*86400)).fetchone()
         historical = self.db.execute("SELECT count(*) FROM timeline_segments").fetchone()[0]
         last_import = self.db.execute("SELECT max(imported_ts) FROM timeline_imports").fetchone()[0]
         return {"source": "iphone_location", "last_received_unix": last,
                 "event_count": events, "location_count": locations,
+                "last_location_received_unix":receipt,"last_location_fix_unix":fix,
+                "location_age_seconds":round(age) if age is not None else None,
+                "location_freshness":"unknown" if age is None else ("recent" if age<=3600 else "stale_or_stationary"),
+                "location_receipts_24h":recent[0] or 0,"location_receipts_7d":recent[1] or 0,
                 "historical_segment_count": historical, "last_historical_import_unix": last_import}
 
     def locations(self, start: str, end: str, limit: int = 200) -> dict:

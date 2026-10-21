@@ -6,3 +6,5 @@ recursive-include iphone/tests *.py *.ndjson *.json
 recursive-include third_party LICENSE NOTICE *.patch
 recursive-include scripts *.py *.sh
 recursive-include scripts *.swift *.m *.h
+
+recursive-include native *.swift

@@ -54,6 +54,10 @@ class McpIntegrationTests(unittest.IsolatedAsyncioTestCase):
             EpisodeBuilder(store, lambda items: {"summary": "Prototype milestones were discussed.",
                                                 "citations": ["message:message-1"]},
                            model="synthetic").sync_day("2026-09-30")
+            store.ingest({"schema": 1, "source": "apple-local", "kind": "voice_memo",
+                          "scope": "voice-memos:all", "collected_at": "2026-10-20T00:00:00Z",
+                          "complete": False, "records": [{"id": "voice-demo", "title": "Demo memo",
+                          "body": "Fictional full voice transcript.", "payload": {}}]})
             store.close()
             server = StdioServerParameters(
                 command=sys.executable,
@@ -75,7 +79,13 @@ class McpIntegrationTests(unittest.IsolatedAsyncioTestCase):
                                       "read_apple_message_attachment_text", "read_apple_message_attachment_chunk",
                                       "view_apple_message_image", "canvas_status", "search_canvas", "canvas_inbox",
                                       "get_canvas_record", "upcoming_canvas_assignments",
-                                      "read_canvas_file_text", "canvas_pdf_info", "view_canvas_pdf_page"}, names)
+                                      "read_canvas_file_text", "canvas_pdf_info", "view_canvas_pdf_page", "search_apple_voice_memo", "get_apple_voice_memo_record",
+                                      "read_apple_voice_memo_transcript", "apple_voice_memo_timeline",
+                                      "apple_voice_memo_status"}, names)
+                    voice = await session.call_tool("get_personal_record", {
+                        "kind": "voice_memo", "record_id": "voice-demo"})
+                    self.assertFalse(voice.isError)
+                    self.assertIn("Fictional full voice transcript", str(voice.structuredContent or voice.content))
                     canvas = await session.call_tool("read_canvas_file_text", {
                         "record_id": "canvas:school:file:42:88", "offset": 17,
                         "max_chars": 17})

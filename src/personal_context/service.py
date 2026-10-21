@@ -37,6 +37,9 @@ class QueryService:
             if start >= end:
                 raise ValueError("search start must precede end")
         def run(store):
+            from .voice_memos import VoiceArchive
+            if kind == "voice_memo":
+                return VoiceArchive(store).search(query, limit, start=start, end=end)
             rows, match_mode = store.search(query, kind, limit, return_mode=True,
                                             start=start, end=end)
             for row in rows:
@@ -44,7 +47,8 @@ class QueryService:
             return {"last_synced_at": store.last_sync(kind),
                     "match_mode": match_mode,
                     "time_window": {"start": start, "end": end} if start else None,
-                    "results": rows}
+                    "results": rows,
+                    "voice_memo_results": VoiceArchive(store).search(query, limit, start=start, end=end)["results"] if kind is None else []}
         return self._use(run)
 
     def upcoming(self, start, end, kind="calendar", limit=100):
@@ -67,7 +71,7 @@ class QueryService:
         start, end = _utc_timestamp(start), _utc_timestamp(end)
         if start >= end:
             raise ValueError("timeline start must precede end")
-        if kind is not None and kind not in ("calendar", "reminder", "contact", "mail", "message", "note", "canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file", "canvas_conversation"):
+        if kind is not None and kind not in ("calendar", "reminder", "contact", "mail", "message", "note", "voice_memo", "canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file", "canvas_conversation"):
             raise ValueError("invalid timeline kind")
         def run(store):
             rows = store.timeline(start, end, kind, limit)
@@ -77,6 +81,13 @@ class QueryService:
         return self._use(run)
 
     def get(self, kind, record_id):
+        if kind == "voice_memo":
+            from .voice_memos import VoiceArchive
+            return self._use(lambda store: {
+                "last_synced_at": store.last_sync(kind),
+                "record": VoiceArchive(store).record(record_id),
+                "transcript": VoiceArchive(store).transcript(record_id),
+            })
         return self._use(lambda store: {
             "last_synced_at": store.last_sync(kind),
             "record": store.get(kind, record_id),
@@ -189,6 +200,7 @@ class QueryService:
             "mail_last_synced_at": store.last_sync("mail"),
             "message_last_synced_at": store.last_sync("message"),
             "note_last_synced_at": store.last_sync("note"),
+            "voice_memo_last_synced_at": store.last_sync("voice_memo"),
             "canvas_course_last_synced_at": store.last_sync("canvas_course"),
             "canvas_assignment_last_synced_at": store.last_sync("canvas_assignment"),
             "canvas_announcement_last_synced_at": store.last_sync("canvas_announcement"),

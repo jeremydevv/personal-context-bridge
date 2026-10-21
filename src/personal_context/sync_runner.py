@@ -143,6 +143,12 @@ def sync_optional_sources(config, config_path, env, run_command,
                                   env=env, timeout=3600))
             except (RuntimeError, subprocess.TimeoutExpired) as exc:
                 errors.append("Messages attachments: " + str(exc))
+    if config.get("all_voice_memos"):
+        try:
+            print(run_command([sys.executable, "-m", "personal_context.cli", "voice-memos-sync",
+                               "--config", str(config_path)], env=env, timeout=3600))
+        except (RuntimeError, subprocess.TimeoutExpired) as exc:
+            errors.append("Voice Memos: " + str(exc))
     if config.get("all_notes"):
         try:
             print(run_command([sys.executable, "-m", "personal_context.cli", "notes-sync",

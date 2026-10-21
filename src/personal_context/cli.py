@@ -31,7 +31,7 @@ def spool_path_for(root, action, lane):
     root = Path(root)
     if action == "mail-fast-sync":
         return root / "mail-fast-sync"
-    if action in ("mail-sync", "messages-sync", "notes-sync", "contacts-sync"):
+    if action in ("mail-sync", "messages-sync", "notes-sync", "contacts-sync", "voice-memos-sync"):
         return root / action if lane == "full" else root / (action + "-fast")
     return root if lane == "full" else root / "fast-sync"
 
@@ -57,11 +57,13 @@ def load_config(path):
         raise ValueError("all_mailboxes must be a boolean")
     if not isinstance(config.get("all_messages", False), bool):
         raise ValueError("all_messages must be a boolean")
+    if not isinstance(config.get("all_voice_memos", False), bool):
+        raise ValueError("all_voice_memos must be a boolean")
     if not isinstance(config.get("all_notes", False), bool):
         raise ValueError("all_notes must be a boolean")
     if not isinstance(config.get("mailbox_urls", []), list) or any(not isinstance(x, str) or not x for x in config.get("mailbox_urls", [])):
         raise ValueError("mailbox_urls must be a list of source URLs")
-    if not config["calendar_ids"] and not config["reminder_ids"] and not config.get("all_calendars") and not config.get("all_reminders") and not config.get("all_contacts") and not config.get("all_mailboxes") and not config.get("mailbox_urls") and not config.get("all_messages") and not config.get("all_notes"):
+    if not config["calendar_ids"] and not config["reminder_ids"] and not config.get("all_calendars") and not config.get("all_reminders") and not config.get("all_contacts") and not config.get("all_mailboxes") and not config.get("mailbox_urls") and not config.get("all_messages") and not config.get("all_notes") and not config.get("all_voice_memos"):
         raise ValueError("select at least one Apple source")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", config.get("remote_host", "")):
         raise ValueError("remote_host must be an SSH alias or host name")
@@ -191,6 +193,15 @@ def main(argv=None):
     messages_sync.add_argument("--config", required=True)
     notes_sync = sub.add_parser("notes-sync", help="Mac: stream a complete Notes snapshot into the encrypted archive")
     notes_sync.add_argument("--config", required=True)
+    voice_sync = sub.add_parser("voice-memos-sync", help="Mac: sync Voice Memos and full embedded transcripts")
+    voice_sync.add_argument("--config", required=True)
+    voice_worker = sub.add_parser("voice-worker", help="server: Voice Memo audio and analysis")
+    voice_worker.add_argument("--db", required=True)
+    voice_worker.add_argument("worker_action", choices=["process", "audio-index", "ingest-audio"])
+    voice_worker.add_argument("--record-id")
+    voice_worker.add_argument("--sha256")
+    voice_worker.add_argument("--bytes", type=int)
+    voice_worker.add_argument("--limit", type=int, default=20)
     contacts_sync = sub.add_parser("contacts-sync", help="Mac: stream a complete Contacts snapshot into the encrypted archive")
     contacts_sync.add_argument("--config", required=True)
     image_sync = sub.add_parser("image-sync", help="Mac: stream changed Messages images to encrypted blob storage")
@@ -214,6 +225,14 @@ def main(argv=None):
     rebuild.add_argument("--db", required=True)
     args = parser.parse_args(argv)
 
+    if args.action == "voice-worker":
+        from .voice_memos_worker import main as voice_main
+        command = [args.worker_action, "--db", args.db, "--limit", str(args.limit)]
+        for key in ("record_id", "sha256", "bytes"):
+            value = getattr(args, key)
+            if value is not None:
+                command.extend(["--" + key.replace("_", "-"), str(value)])
+        return voice_main(command)
     if args.action == "image-index":
         require_archive_key()
         store = Store(args.db)
@@ -386,6 +405,12 @@ def main(argv=None):
             spool.enqueue([batch])
             spool.flush(lambda payload: deliver_ssh(config, payload))
         print(json.dumps({**counts, "batches": len(batches)}))
+        return 0
+    if args.action == "voice-memos-sync":
+        if not config.get("all_voice_memos"):
+            raise ValueError("enable all_voice_memos before Voice Memos sync")
+        from .voice_memos_sync import sync as sync_voice_memos
+        print(json.dumps(sync_voice_memos(config, spool)))
         return 0
     if args.action == "notes-sync":
         if not config.get("all_notes"):

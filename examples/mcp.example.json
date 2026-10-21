@@ -106,6 +106,19 @@
         "PERSONAL_CONTEXT_APPLE_WRITE_TARGET": "example-user@mac.example",
         "PERSONAL_CONTEXT_APPLE_WRITE_REMOTE_COMMAND": "/private/bin/apple-write-receiver"
       }
+    },
+    "apple-voice-memos": {
+      "command": "/absolute/project/.venv/bin/python",
+      "args": [
+        "-m",
+        "personal_context.source_mcp_server",
+        "--source",
+        "voice_memo"
+      ],
+      "env": {
+        "PERSONAL_CONTEXT_DB": "/private/runtime/context.sqlite3",
+        "PERSONAL_CONTEXT_KEY_FILE": "/private/runtime/archive.key"
+      }
     }
   }
 }

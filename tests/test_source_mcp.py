@@ -11,7 +11,7 @@ class SourceMcpTests(unittest.IsolatedAsyncioTestCase):
     async def test_every_source_starts_with_writes_and_refresh_opt_in(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)/'runtime';initialize(root,demo=True)
-            for source in ('calendar','reminder','contact','mail','message','note'):
+            for source in ('calendar','reminder','contact','mail','message','note','voice_memo'):
                 server=StdioServerParameters(command=sys.executable,
                     args=['-m','personal_context.source_mcp_server','--source',source],
                     env={'PERSONAL_CONTEXT_DB':str(root/'context.sqlite3'),

@@ -12,5 +12,6 @@
   "all_messages": false,
   "all_notes": false,
   "from_date": "2020-01-01",
-  "to_date": "2030-12-31"
+  "to_date": "2030-12-31",
+  "all_voice_memos": false
 }

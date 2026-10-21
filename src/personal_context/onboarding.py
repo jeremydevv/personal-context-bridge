@@ -65,7 +65,7 @@ def initialize(root=None, *, demo=False, iphone=False):
     templates = {'mcp.json': config,
         'apple.json': {'calendar_ids': [], 'reminder_ids': [], 'mailbox_urls': [],
             'all_calendars': False, 'all_reminders': False, 'all_contacts': False,
-            'all_mailboxes': False, 'all_messages': False, 'all_notes': False,
+            'all_mailboxes': False, 'all_messages': False, 'all_notes': False, 'all_voice_memos': False,
             'remote_host': 'archive-server', 'remote_project': '/srv/personal-context-bridge',
             'remote_data_dir': '/srv/private-context', 'from_date': '2020-01-01', 'to_date': '2030-12-31'},
         'canvas.json': {'base_url': 'https://canvas.example.invalid', 'account': 'school',

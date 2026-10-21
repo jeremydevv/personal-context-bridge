@@ -138,6 +138,8 @@ class Store:
             SELECT guid,object_id,mime_type,bytes,source_mtime_ns,sha256,archived_at
             FROM image_attachments
         """)
+        from .voice_memos import SCHEMA as voice_schema
+        self.db.executescript(voice_schema)
         self.db.commit()
 
     def close(self):
@@ -147,14 +149,14 @@ class Store:
     def _validate(batch):
         if batch.get("schema") != 1 or batch.get("source") not in ("apple-pim", "apple-local", "canvas-lms"):
             raise ValueError("unsupported batch schema or source")
-        if batch.get("kind") not in ("calendar", "reminder", "contact", "mail", "message", "note", "inventory", "canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file", "canvas_conversation"):
+        if batch.get("kind") not in ("calendar", "reminder", "contact", "mail", "message", "note", "voice_memo", "inventory", "canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file", "canvas_conversation"):
             raise ValueError("unsupported record kind")
         if (batch["source"] == "canvas-lms") != (batch["kind"] in ("canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file", "canvas_conversation")):
             raise ValueError("Canvas records require the Canvas source")
         if batch["kind"] == "inventory" and (batch["source"] != "apple-pim" or batch.get("scope") not in ("calendar", "reminder", "mail")):
             raise ValueError("unsupported source inventory")
-        if batch["kind"] in ("message", "note") and batch["source"] != "apple-local":
-            raise ValueError("Messages and Notes require the local Apple source")
+        if batch["kind"] in ("message", "note", "voice_memo") and batch["source"] != "apple-local":
+            raise ValueError("Messages, Notes and Voice Memos require the local Apple source")
         if not isinstance(batch.get("scope"), str) or not batch["scope"]:
             raise ValueError("scope required")
         if not isinstance(batch.get("collected_at"), str) or not batch["collected_at"]:
@@ -197,6 +199,25 @@ class Store:
             for item in batch["records"]:
                 record_id = item["id"]
                 incoming.add(record_id)
+                if kind == "voice_memo" and not item.get("body", "").strip() and not item.get("payload", {}).get("audio_sha256"):
+                    # iCloud can evict the local audio. Keep archived text explicitly
+                    # historical instead of replacing a full transcript with empty text.
+                    previous = self.get(kind, record_id)
+                    if previous:
+                        analysis = self.db.execute("""
+                            SELECT a.transcript,a.segments,a.transcript_source
+                            FROM voice_analysis a JOIN records r ON r.id=a.id
+                            AND r.kind='voice_memo' AND r.digest=a.source_digest WHERE a.id=?
+                        """, (record_id,)).fetchone()
+                        text = analysis["transcript"] if analysis else previous["body"]
+                        if text:
+                            item = dict(item, body=text, payload=dict(item.get("payload", {})))
+                            for field in ("audio_sha256", "audio_bytes"):
+                                item["payload"][field] = previous["payload"].get(field)
+                            item["payload"]["segments"] = json.loads(analysis["segments"]) if analysis else previous["payload"].get("segments", [])
+                            item["payload"]["transcript_source"] = analysis["transcript_source"] if analysis else previous["payload"].get("transcript_source")
+                            item["payload"]["transcript_status"] = "archived_previous_local_copy"
+                            item["payload"]["transcript_currentness"] = "unverified_after_local_eviction"
                 if kind == "canvas_file":
                     encoded = item.get("pdf_base64")
                     if encoded is None:
@@ -533,7 +554,7 @@ class Store:
         now = now or datetime.now(timezone.utc)
         cutoff = (now - timedelta(hours=stale_after_hours)).isoformat().replace("+00:00", "Z")
         sources = {}
-        for kind in ("calendar", "reminder", "contact", "mail", "message", "note", "canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file", "canvas_conversation"):
+        for kind in ("calendar", "reminder", "contact", "mail", "message", "note", "voice_memo", "canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file", "canvas_conversation"):
             active = self.db.execute("SELECT COUNT(*) FROM records WHERE kind=? AND deleted=0", (kind,)).fetchone()[0]
             scopes, oldest, newest, stale = self.db.execute("""
                 SELECT COUNT(*),MIN(collected_at),MAX(collected_at),

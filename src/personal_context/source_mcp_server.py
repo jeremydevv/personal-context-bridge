@@ -6,9 +6,9 @@ import os
 from .service import QueryService
 
 
-SOURCES = ("calendar", "reminder", "contact", "mail", "message", "note")
+SOURCES = ("calendar", "reminder", "contact", "mail", "message", "note", "voice_memo")
 LABELS = {"calendar": "Calendar", "reminder": "Reminders", "contact": "Contacts",
-          "mail": "Mail", "message": "Messages", "note": "Notes"}
+          "mail": "Mail", "message": "Messages", "note": "Notes", "voice_memo": "Voice Memos"}
 
 
 def run(argv=None):
@@ -24,6 +24,11 @@ def run(argv=None):
         raise RuntimeError("encrypted archive and unlocked key are required")
     service = QueryService(database_path)
     mcp = FastMCP("apple-" + source)
+    if source == "voice_memo":
+        from .voice_memos_mcp import register
+        register(mcp, service)
+        mcp.run(transport="stdio")
+        return
     read_only = ToolAnnotations(readOnlyHint=True, destructiveHint=False,
                                 idempotentHint=True, openWorldHint=False)
     label = LABELS[source]

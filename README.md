@@ -8,6 +8,10 @@ Optional [Instagram Saved-video search and analysis](docs/INSTAGRAM-SAVED.md)
 uses a Saved-only URL collector, separate anonymous downloads, local speech/OCR,
 encrypted media storage and timestamped image tools. It is disabled by default.
 
+Optional [Apple Voice Memos](docs/VOICE-MEMOS.md) adds full native/local transcripts,
+encrypted audio, shared subscription-backed titles/summaries, and local hybrid
+search. Collection and advanced processing are opt-in.
+
 This repository contains reusable code and fictional tests. It ships no personal
 archive, account credentials, installed app IDs, or maintainer deployment history.
 
@@ -51,6 +55,7 @@ package yet; install from this repository.
 | Apple Mail | Mailbox inventory, headers, recipient details and available bodies | Local Mail index via patched Apple PIM; Full Disk Access; SSH key for transfer |
 | Apple Messages | Messages, participants, attachment metadata and optionally file bytes | Full Disk Access to the local Messages database/files; SSH key for transfer |
 | Apple Notes | Titles, available bodies, folders and timestamps | macOS Automation access to Notes; SSH key for transfer |
+| Apple Voice Memos | Full transcripts, source titles/dates, generated summaries and local semantic passages | Mac local Voice Memos/iCloud cache read access; existing SSH transport; shared ChatGPT-plan OAuth for summaries |
 | Canvas | Student courses, assignments, submissions/grades, announcements, files, and Inbox conversations; optional PDF/DOCX text | User-provided Canvas API bearer token in a private local file |
 | Apple Health | Selected HealthKit samples, workouts/routes, activity summaries and aggregates | HealthKit read permission in the PulsHealth iPhone app; bearer token for receiver uploads |
 | OwnTracks | Location coordinates, timestamps and travel event metadata | iOS location permission; HTTP Basic authentication with a private generated password |

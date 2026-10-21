@@ -1,0 +1,10 @@
+[Unit]
+Description=Process encrypted Voice Memo transcripts and search index
+After=network-online.target
+
+[Service]
+Type=oneshot
+UMask=0077
+EnvironmentFile=/private/config/voice-memos.env
+ExecStart=/absolute/project/.venv/bin/python -m personal_context.voice_memos_worker process --db /private/runtime/context.sqlite3
+NoNewPrivileges=true

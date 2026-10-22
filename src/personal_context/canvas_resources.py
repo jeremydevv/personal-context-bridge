@@ -63,7 +63,11 @@ def collect_resources(read, account, courses, assignments, stamp, linked_pages=(
     prefix='canvas:'+account+':'
 
     def record(kind, item, cid=None, locator=None, body=None, **extra):
-        locator=str(locator if locator is not None else _id(item.get('id')))
+        value=item.get('id')
+        # Canvas grading periods can encode numeric IDs as decimal strings.
+        if kind=='grading_period' and isinstance(value,str) and re.fullmatch(r'[0-9]{1,30}',value):
+            value=int(value)
+        locator=str(locator if locator is not None else _id(value))
         rid=prefix+kind+(':'+str(cid) if cid is not None else '')+':'+locator
         payload=dict(item,account=account,**extra)
         if cid is not None:payload['course_id']=cid

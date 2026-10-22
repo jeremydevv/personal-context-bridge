@@ -191,3 +191,24 @@ class CanvasResourcesTests(unittest.TestCase):
             store.close()
 
 if __name__=='__main__':unittest.main()
+
+class GradingPeriodIDTests(unittest.TestCase):
+    def collect(self, value):
+        def read(path, params):
+            if path.endswith('/grading_periods'):
+                return {'grading_periods':[{'id':value,'title':'Fictional term'}]}
+            if path == 'courses/7':return {'id':7}
+            if path.endswith('/front_page'):raise CanvasAPIError(404)
+            return []
+        return resources.collect_resources(read,'demo',[{'id':7}],{},STAMP,include_account=False)
+
+    def test_decimal_string_grading_period_id_is_stable_and_payload_preserved(self):
+        for value in (61,'61'):
+            batches=self.collect(value)
+            row=next(b for b in batches if b['kind']=='canvas_grading_period')['records'][0]
+            self.assertEqual(row['id'],'canvas:demo:grading_period:7:61')
+            self.assertEqual(row['payload']['id'],value)
+
+    def test_invalid_grading_period_ids_abort(self):
+        for value in (True,None,0,'0','-1','../61','6.1','٦١'):
+            with self.subTest(value=value),self.assertRaises(ValueError):self.collect(value)

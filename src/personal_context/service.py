@@ -7,6 +7,8 @@ import os
 import subprocess
 from pathlib import Path
 
+from .canvas_resources import CANVAS_KINDS
+
 from .store import Store
 
 
@@ -71,7 +73,7 @@ class QueryService:
         start, end = _utc_timestamp(start), _utc_timestamp(end)
         if start >= end:
             raise ValueError("timeline start must precede end")
-        if kind is not None and kind not in ("calendar", "reminder", "contact", "mail", "message", "note", "voice_memo", "canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file", "canvas_conversation", "canvas_module", "canvas_module_item", "canvas_page"):
+        if kind is not None and kind not in ("calendar", "reminder", "contact", "mail", "message", "note", "voice_memo", *CANVAS_KINDS):
             raise ValueError("invalid timeline kind")
         def run(store):
             rows = store.timeline(start, end, kind, limit)

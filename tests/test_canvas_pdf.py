@@ -39,7 +39,7 @@ class CanvasPdfTests(unittest.TestCase):
               'url': 'https://canvas.example.invalid/file'}], [], [], []]
         client.download.return_value = graph_pdf()
         with patch('personal_context.canvas_collect.extract', side_effect=OSError('missing pdftotext')):
-            record = collect_batches(client, 'demo', download_files=True)[3]['records'][0]
+            record = collect_batches(client, 'demo', download_files=True, extended=False)[3]['records'][0]
         self.assertEqual(base64.b64decode(record.get('pdf_base64', '')), graph_pdf())
         self.assertEqual(record['payload']['extraction_status'], 'unavailable')
         self.assertEqual(record['payload']['pdf_status'], 'available')

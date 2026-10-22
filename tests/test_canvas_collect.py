@@ -11,7 +11,7 @@ class CanvasCollectorTests(unittest.TestCase):
               'due_at': '2026-01-02T00:00:00Z', 'submission': {'grade': 'A', 'score': 10}}],
             [{'id': 9, 'title': 'Fictional announcement', 'message': '<p>Welcome</p>'}],
             [{'id': 10, 'display_name': 'sample.pdf', 'url': 'https://canvas.example.invalid/file'}], [], [], []]
-        batches = collect_batches(client, 'demo')
+        batches = collect_batches(client, 'demo', extended=False)
         self.assertEqual([x['kind'] for x in batches], ['canvas_course','canvas_assignment','canvas_announcement','canvas_file','canvas_module','canvas_module_item','canvas_page','canvas_conversation','canvas_conversation'])
         self.assertTrue(all(x['complete'] for x in batches))
         self.assertEqual(batches[1]['records'][0]['payload']['submission']['grade'], 'A')
@@ -26,7 +26,7 @@ class CanvasCollectorTests(unittest.TestCase):
 
     def test_no_partial_complete_snapshot_on_api_error(self):
         client = Mock();client.pages.side_effect = [[{'id': 7, 'name': 'Demo'}], RuntimeError('unavailable')]
-        with self.assertRaises(RuntimeError): collect_batches(client, 'demo')
+        with self.assertRaises(RuntimeError): collect_batches(client, 'demo', extended=False)
 
     def test_pages_follow_same_origin_and_detect_loops(self):
         import httpx

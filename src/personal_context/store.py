@@ -1,3 +1,4 @@
+from .canvas_resources import CANVAS_KINDS, COURSE_KINDS
 import base64
 import hashlib
 import json
@@ -210,12 +211,30 @@ class Store:
         self.db.close()
 
     @staticmethod
+    def _canvas_window(batch):
+        value = batch.get('canvas_window')
+        if value is None:return None
+        try:
+            if batch['source'] != 'canvas-lms' or batch['kind'] not in ('canvas_planner_item','canvas_calendar_event') or batch['complete']:
+                raise ValueError('unsupported Canvas window')
+            if set(value) != {'start','end'}:raise ValueError('invalid Canvas window keys')
+            start,end=(datetime.fromisoformat(value[k].replace('Z','+00:00')) for k in ('start','end'))
+            if start.tzinfo is None or end.tzinfo is None or not start<end or end-start>timedelta(days=366):
+                raise ValueError('invalid Canvas window bounds')
+            for record in batch['records']:
+                at=datetime.fromisoformat(record['start'].replace('Z','+00:00'))
+                if at.tzinfo is None or not start<=at<end:raise ValueError('Canvas record outside window')
+        except (ValueError,TypeError,KeyError,AttributeError) as exc:
+            raise ValueError('invalid authoritative Canvas window') from exc
+        return start,end
+
+    @staticmethod
     def _validate(batch):
         if batch.get("schema") != 1 or batch.get("source") not in ("apple-pim", "apple-local", "canvas-lms"):
             raise ValueError("unsupported batch schema or source")
-        if batch.get("kind") not in ("calendar", "reminder", "contact", "mail", "message", "note", "voice_memo", "inventory", "canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file", "canvas_conversation", "canvas_module", "canvas_module_item", "canvas_page"):
+        if batch.get("kind") not in ("calendar", "reminder", "contact", "mail", "message", "note", "voice_memo", "inventory", *CANVAS_KINDS):
             raise ValueError("unsupported record kind")
-        if (batch["source"] == "canvas-lms") != (batch["kind"] in ("canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file", "canvas_conversation", "canvas_module", "canvas_module_item", "canvas_page")):
+        if (batch["source"] == "canvas-lms") != (batch["kind"] in CANVAS_KINDS):
             raise ValueError("Canvas records require the Canvas source")
         if batch["kind"] == "inventory" and (batch["source"] != "apple-pim" or batch.get("scope") not in ("calendar", "reminder", "mail")):
             raise ValueError("unsupported source inventory")
@@ -248,6 +267,7 @@ class Store:
             if not isinstance(record.get("payload", {}), dict):
                 raise ValueError("payload must be an object")
         _calendar_window(batch)
+        Store._canvas_window(batch)
 
     def ingest(self, batch):
         self._validate(batch)
@@ -255,7 +275,7 @@ class Store:
         if batch["kind"] == "inventory":
             return self._ingest_inventory(batch)
         kind, source, scope, timestamp = (batch[key] for key in ("kind", "source", "scope", "collected_at"))
-        window = _calendar_window(batch)
+        window = _calendar_window(batch) or self._canvas_window(batch)
         incoming = set()
         with self.db:
             prior = self.db.execute("""
@@ -355,7 +375,7 @@ class Store:
                 if kind == "canvas_course":
                     # Course removal also retires its assignments, announcements and files.
                     prefix = scope + ":course:"
-                    for linked_kind in ("canvas_assignment", "canvas_announcement", "canvas_file", "canvas_module", "canvas_module_item", "canvas_page"):
+                    for linked_kind in ("canvas_assignment", "canvas_announcement", "canvas_file", "canvas_module", "canvas_module_item", "canvas_page", *("canvas_" + k for k in COURSE_KINDS), "canvas_collection_state"):
                         retired_scopes = set()
                         for linked in self.db.execute("""
                         SELECT id,scope FROM records WHERE source='canvas-lms'
@@ -629,7 +649,7 @@ class Store:
         now = now or datetime.now(timezone.utc)
         cutoff = (now - timedelta(hours=stale_after_hours)).isoformat().replace("+00:00", "Z")
         sources = {}
-        for kind in ("calendar", "reminder", "contact", "mail", "message", "note", "voice_memo", "canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file", "canvas_conversation", "canvas_module", "canvas_module_item", "canvas_page"):
+        for kind in ("calendar", "reminder", "contact", "mail", "message", "note", "voice_memo", *CANVAS_KINDS):
             active = self.db.execute("SELECT COUNT(*) FROM records WHERE kind=? AND deleted=0", (kind,)).fetchone()[0]
             scopes, oldest, newest, stale = self.db.execute("""
                 SELECT COUNT(*),MIN(collected_at),MAX(collected_at),

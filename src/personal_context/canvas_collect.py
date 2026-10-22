@@ -17,6 +17,7 @@ from .store import Store
 
 from .canvas_pdf import MAX_FILE_BYTES
 from .canvas_modules import CanvasAPIError, collect_course_modules
+from .canvas_resources import collect_resources
 
 
 class TextParser(HTMLParser):
@@ -62,7 +63,7 @@ class CanvasClient:
             raise ValueError('refusing an unsafe Canvas URL')
         return (parts.scheme, parts.hostname, parts.port or 443)
 
-    def pages(self, path):
+    def pages(self, path, wrapper=None):
         url = urljoin(self.base + '/', path)
         seen = set(); result = []
         while url:
@@ -75,6 +76,7 @@ class CanvasClient:
             if response.status_code != 200:
                 raise CanvasAPIError(response.status_code)
             page = response.json()
+            if wrapper and isinstance(page, dict):page = page.get(wrapper)
             if not isinstance(page, list) or any(not isinstance(item, dict) for item in page):
                 raise ValueError('Canvas returned an invalid page')
             result.extend(page)
@@ -124,11 +126,12 @@ def identifier(item):
     return str(value)
 
 
-def collect_batches(client, account, *, download_files=False):
+def collect_batches(client, account, *, download_files=False, extended=True):
     if not re.fullmatch(r'[A-Za-z0-9_-]+', account): raise ValueError('invalid account label')
     at = datetime.now(timezone.utc).isoformat().replace('+00:00','Z')
-    courses = client.pages('/api/v1/courses?enrollment_type=student&include[]=total_scores&per_page=100')
+    courses = client.pages('/api/v1/courses?enrollment_type=student&enrollment_state=active&include[]=total_scores&per_page=100')
     batches = []
+    assignments_by_course = {}
     def batch(kind, scope, items):
         batches.append({'schema':1,'source':'canvas-lms','kind':'canvas_' + kind,
             'scope':scope,'collected_at':at,'complete':True,'records':items})
@@ -147,7 +150,13 @@ def collect_batches(client, account, *, download_files=False):
             ('announcement','/discussion_topics?only_announcements=true&per_page=100','title','message'),
             ('file','/files?per_page=100','display_name',None)):
             records = []
-            for item in client.pages(prefix + endpoint):
+            try:
+                source_items = client.pages(prefix + endpoint)
+            except CanvasAPIError as exc:
+                if kind != 'file' or exc.status not in (403,404):raise
+                continue
+            if kind == 'assignment':assignments_by_course[int(cid)] = source_items
+            for item in source_items:
                 rid = identifier(item); payload = dict(item); pdf_data = None
                 title = item.get(title_key) or item.get('filename') or '(untitled)'
                 body = plain(item.get(body_key)) if body_key else ''
@@ -184,6 +193,19 @@ def collect_batches(client, account, *, download_files=False):
             if exc.status not in (403, 404):
                 raise
             record['payload']['module_collection'] = {'status': 'unavailable', 'http_status': exc.status}
+
+    def read_resource(path, params):
+        url = '/api/v1/' + path
+        if params:url += '?' + urlencode(params, doseq=True)
+        wrapper = 'grading_periods' if path.endswith('/grading_periods') else 'quiz_submissions' if '/quizzes/' in path and path.endswith('/submissions') else None
+        single = (path.count('/') == 1 and path.startswith('courses/')) or '/pages/' in path or path.endswith('/front_page') or path.endswith('/submissions/self')
+        if single:return client.get(url)
+        return client.pages(url, wrapper=wrapper) if wrapper else client.pages(url)
+
+    if extended:
+        linked_pages = [b for b in batches if b['kind'] == 'canvas_page']
+        batches = [b for b in batches if b['kind'] != 'canvas_page']
+        batches.extend(collect_resources(read_resource, account, courses, assignments_by_course, at, linked_pages))
 
     # Conversation detail reads must explicitly disable Canvas's default
     # auto-mark-as-read behavior so collection remains read-only.

@@ -51,7 +51,7 @@ class CanvasModuleTests(unittest.TestCase):
         client = CanvasClient('https://canvas.example.invalid', 'fictional-token',
                               transport=httpx.MockTransport(handle))
         try:
-            return collect_batches(client, 'demo')
+            return collect_batches(client, 'demo', extended=False)
         finally:
             client.close()
 

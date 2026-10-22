@@ -35,6 +35,9 @@ class ContactsCollectorTests(unittest.TestCase):
                     state = {"running": already_running}
 
                     def automation(args, **kwargs):
+                        if args[0] == "/usr/bin/open":
+                            state["running"] = True
+                            return subprocess.CompletedProcess(args, 0, "", "")
                         if "-e" in args:
                             script = args[-1]
                             if "quit()" in script:

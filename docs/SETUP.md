@@ -240,7 +240,11 @@ Back up encrypted attachment blobs as well as the database and protect a separat
 recovery copy of your key. Restore into an isolated private directory and verify
 queries before replacing an archive. iPhone snapshots retain seven copies by
 default. The optional Mac `personal_context.sync_runner` adds encrypted backup
-mirroring/rotation; it expects `config.json` in `PERSONAL_CONTEXT_CONFIG_DIR`,
+mirroring/rotation. Set `"mac_backups_enabled": false` in the Mac
+`config.json` to keep both full and fast collection uploading into the archive
+server without database or attachment backups to the Mac. Existing configurations
+default to backup mirroring when this setting is omitted. The runner expects
+`config.json` in `PERSONAL_CONTEXT_CONFIG_DIR`,
 `archive.key` there or at `PERSONAL_CONTEXT_KEY_FILE`, and remote key provision
 paths configured through `PERSONAL_CONTEXT_REMOTE_KEY_FILE`. Provide private
 runtime storage for the remote key; automatic temporary key provisioning requires

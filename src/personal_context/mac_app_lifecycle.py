@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -26,6 +27,21 @@ def collected_app(name, command="/usr/bin/osascript"):
             raise RuntimeError("Cannot determine whether " + name + " was already running")
         already_running = probe.stdout.strip() == "true"
         try:
+            if not already_running:
+                launch = subprocess.run(["/usr/bin/open", "-g", "-a", name],
+                                        capture_output=True, text=True, timeout=60)
+                if launch.returncode:
+                    raise RuntimeError("Cannot launch " + name + " before collection")
+                # AppleEvents sent during an implicit cold launch can fail with
+                # macOS -600. Wait for the app before the snapshot starts.
+                for _ in range(20):
+                    ready = subprocess.run([command, "-l", "JavaScript", "-e", app + ".running()"],
+                                           capture_output=True, text=True, timeout=5)
+                    if ready.returncode == 0 and ready.stdout.strip() == "true":
+                        break
+                    time.sleep(0.25)
+                else:
+                    raise RuntimeError(name + " did not become ready for collection")
             yield
         finally:
             if not already_running:

@@ -179,6 +179,9 @@ def main(argv=None):
             return 0
         config_path = CONFIG_DIR / "config.json"
         config = load_config(config_path)
+        mac_backups_enabled = config.get("mac_backups_enabled", True)
+        if not isinstance(mac_backups_enabled, bool):
+            raise ValueError("mac_backups_enabled must be a boolean")
         if KEY_PATH.is_symlink() or KEY_PATH.stat().st_mode & 0o077:
             raise RuntimeError("archive key file is not private")
         key = KEY_PATH.read_bytes()
@@ -210,7 +213,7 @@ def main(argv=None):
         if args.fast:
             source_errors = sync_optional_sources(config, config_path, env, run,
                                                   include_mail=False, include_attachments=True)
-            if config.get("all_messages"):
+            if mac_backups_enabled and config.get("all_messages"):
                 try:
                     print(json.dumps(mirror_encrypted_blobs(host, remote, run_command=run, remote_data_dir=remote_data_dir)))
                 except (RuntimeError, subprocess.TimeoutExpired, OSError, ValueError) as exc:
@@ -225,6 +228,11 @@ def main(argv=None):
                 raise RuntimeError("Fast Apple sync failed: " + "; ".join(source_errors))
             return 0
         source_errors = sync_optional_sources(config, config_path, env, run)
+        if not mac_backups_enabled:
+            print(json.dumps({"mac_backups_enabled": False}))
+            if source_errors:
+                raise RuntimeError("Apple source sync failed: " + "; ".join(source_errors))
+            return 0
         staging_name = "backup-" + uuid.uuid4().hex + ".sqlite3"
         staging = remote_data_dir / staging_name
         remote_command = ("cd " + shlex.quote(str(remote)) + " && PERSONAL_CONTEXT_KEY_FILE=" + shlex.quote(SERVER_KEY_PATH) +

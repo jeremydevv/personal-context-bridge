@@ -10,6 +10,23 @@ MAIL_CLI = Path.home() / ".local/share/personal-context-bridge/bin/mail-cli"
 PARTITIONS = 32
 
 
+def request_mail_refresh():
+    """Wake the signed-in Mail replica and request a fetch before reading it.
+
+    Fetch is asynchronous: acceptance does not prove provider freshness. Leave
+    Mail running so it can finish fetching and subsequent scans can ingest it.
+    This does not send mail, change accounts, or expand the archive allowlist.
+    """
+    for command in (["open", "-g", "-a", "Mail"],
+                    ["osascript", "-e", 'tell application "Mail" to check for new mail']):
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError("Mail refresh request failed") from exc
+        if result.returncode:
+            raise RuntimeError("Mail refresh request failed")
+
+
 def list_mailboxes(command=str(MAIL_CLI)):
     result = subprocess.run([command, "mailboxes", "--engine", "sqlite", "--format", "json"],
                             capture_output=True, text=True, timeout=120)

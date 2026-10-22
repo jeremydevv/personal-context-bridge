@@ -91,6 +91,9 @@ for vault in "${vaults[@]}"; do
     --max-delete 20
     --modify-window 1s
     --resilient --recover
+    # A killed run must not leave a permanent lock. The shared flock above
+    # still excludes every live reconciliation and MCP edit.
+    --max-lock 30m
     --retries 1
   )
   case "$mode" in

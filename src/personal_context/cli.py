@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .collect import collect_batches, collect_recent_calendar, run_cli
 from .contacts_collect import collect_contacts_snapshot
-from .mail_collect import list_mailboxes, export_mailbox, recent_mailbox
+from .mail_collect import list_mailboxes, export_mailbox, recent_mailbox, request_mail_refresh
 from .messages_collect import collect_messages
 from .image_archive import (collect_image_candidates, collect_attachment_candidates,
                             MAX_IMAGE_BYTES, MAX_ATTACHMENT_BYTES)
@@ -332,7 +332,7 @@ def main(argv=None):
         return 0
     if args.action == "health":
         require_archive_key()
-        store = Store(args.db)
+        store = Store(args.db, read_only=True)
         try:
             report = store.health()
             print(json.dumps(report))
@@ -436,6 +436,7 @@ def main(argv=None):
         selected = set(config.get("mailbox_urls", []))
         if not selected and not config.get("all_mailboxes"):
             raise ValueError("select mailboxes before Mail sync")
+        request_mail_refresh()
         mailboxes = list_mailboxes()
         if selected - {item["mailboxUrl"] for item in mailboxes}:
             raise ValueError("configured Mail mailbox is unavailable")

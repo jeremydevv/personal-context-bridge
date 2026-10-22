@@ -84,7 +84,8 @@ class CliSecurityTests(unittest.TestCase):
                         "collected_at": "2026-10-01T00:00:00Z", "complete": True,
                         "records": []} for index in range(32)]
             sent = []
-            with patch("personal_context.cli.list_mailboxes", return_value=[mailbox]), \
+            with patch("personal_context.cli.request_mail_refresh"), \
+                 patch("personal_context.cli.list_mailboxes", return_value=[mailbox]), \
                  patch("personal_context.cli.export_mailbox", return_value=(batches, 0)), \
                  patch("personal_context.cli.deliver_ssh", side_effect=lambda config, payload, timeout: sent.append(json.loads(payload))), \
                  patch("sys.stdout", new_callable=io.StringIO):
@@ -108,6 +109,22 @@ class CliSecurityTests(unittest.TestCase):
                  patch("sys.stdout", new_callable=io.StringIO):
                 exit_code = main(["health", "--db", str(database), "--fail-on-stale"])
             self.assertEqual(2, exit_code)
+
+    def test_health_can_read_while_ingestion_holds_write_transaction(self):
+        from personal_context.store import Store
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "archive.sqlite3"
+            store = Store(database)
+            try:
+                store.db.execute("BEGIN IMMEDIATE")
+                with patch("personal_context.cli.require_archive_key"), \
+                     patch("sys.stdout", new_callable=io.StringIO) as output:
+                    code = main(["health", "--db", str(database)])
+                self.assertEqual(0, code)
+                self.assertEqual(0, json.loads(output.getvalue())["sources"]["mail"]["active_records"])
+            finally:
+                store.db.rollback()
+                store.close()
 
     def test_health_check_fails_on_calendar_inventory_drift(self):
         from personal_context.store import Store

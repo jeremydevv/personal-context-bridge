@@ -5,12 +5,30 @@ from pathlib import Path
 from unittest.mock import patch
 
 from personal_context.mail_collect import parse_export, recent_mailbox, PARTITIONS
+from personal_context import mail_collect
 from personal_context.store import Store
 
 
 class MailCollectorTests(unittest.TestCase):
     mailbox = {"localMailboxId": 17, "mailboxUrl": "imap://account/INBOX", "messageCount": 2}
     timestamp = "2026-10-01T12:00:00Z"
+
+    def test_refresh_requests_provider_fetch_without_quitting_mail(self):
+        from subprocess import CompletedProcess
+        with patch("personal_context.mail_collect.subprocess.run", return_value=CompletedProcess([], 0, "", "")) as run:
+            mail_collect.request_mail_refresh()
+        self.assertEqual([
+            ["open", "-g", "-a", "Mail"],
+            ["osascript", "-e", 'tell application "Mail" to check for new mail'],
+        ], [call.args[0] for call in run.call_args_list])
+        self.assertTrue(all(call.kwargs["timeout"] <= 60 for call in run.call_args_list))
+
+    def test_failed_refresh_is_not_reported_as_successful_collection(self):
+        from subprocess import CompletedProcess
+        with patch("personal_context.mail_collect.subprocess.run", return_value=CompletedProcess([], 1, "", "private diagnostic")):
+            with self.assertRaisesRegex(RuntimeError, "Mail refresh request failed") as error:
+                mail_collect.request_mail_refresh()
+        self.assertNotIn("private diagnostic", str(error.exception))
 
     def lines(self, footer=True):
         values = [

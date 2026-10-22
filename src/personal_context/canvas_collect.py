@@ -9,13 +9,14 @@ import os
 from pathlib import Path
 import re
 import subprocess
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit, urlencode
 import zipfile
 import xml.etree.ElementTree as ET
 import httpx
 from .store import Store
 
 from .canvas_pdf import MAX_FILE_BYTES
+from .canvas_modules import CanvasAPIError, collect_course_modules
 
 
 class TextParser(HTMLParser):
@@ -49,7 +50,7 @@ class CanvasClient:
             raise ValueError('Canvas request must stay on the configured origin')
         response = self.http.get(url, headers={'Authorization': 'Bearer ' + self.token})
         if response.status_code != 200:
-            raise RuntimeError('Canvas API read failed (HTTP %d)' % response.status_code)
+            raise CanvasAPIError(response.status_code)
         item = response.json()
         if not isinstance(item, dict):
             raise ValueError('Canvas returned an invalid record')
@@ -72,7 +73,7 @@ class CanvasClient:
             seen.add(url)
             response = self.http.get(url, headers={'Authorization': 'Bearer ' + self.token})
             if response.status_code != 200:
-                raise RuntimeError('Canvas API read failed (HTTP %d)' % response.status_code)
+                raise CanvasAPIError(response.status_code)
             page = response.json()
             if not isinstance(page, list) or any(not isinstance(item, dict) for item in page):
                 raise ValueError('Canvas returned an invalid page')
@@ -168,6 +169,21 @@ def collect_batches(client, account, *, download_files=False):
                     'title':title,'body':body,'start':item.get('due_at') if kind=='assignment' else item.get('posted_at',item.get('created_at')),
                     'payload':payload, **({'pdf_base64': pdf_data} if pdf_data is not None else {})})
             batch(kind,scope,records)
+
+    def read_module(path, params):
+        url = '/api/v1/' + path
+        if params:
+            url += '?' + urlencode(params, doseq=True)
+        return client.get(url) if '/pages/' in path else client.pages(url)
+
+    for course, record in zip(courses, course_records):
+        try:
+            batches.extend(collect_course_modules(read_module, account, course['id'], at))
+            record['payload']['module_collection'] = {'status': 'available'}
+        except CanvasAPIError as exc:
+            if exc.status not in (403, 404):
+                raise
+            record['payload']['module_collection'] = {'status': 'unavailable', 'http_status': exc.status}
 
     # Conversation detail reads must explicitly disable Canvas's default
     # auto-mark-as-read behavior so collection remains read-only.

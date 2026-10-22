@@ -71,7 +71,7 @@ class QueryService:
         start, end = _utc_timestamp(start), _utc_timestamp(end)
         if start >= end:
             raise ValueError("timeline start must precede end")
-        if kind is not None and kind not in ("calendar", "reminder", "contact", "mail", "message", "note", "voice_memo", "canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file", "canvas_conversation"):
+        if kind is not None and kind not in ("calendar", "reminder", "contact", "mail", "message", "note", "voice_memo", "canvas_course", "canvas_assignment", "canvas_announcement", "canvas_file", "canvas_conversation", "canvas_module", "canvas_module_item", "canvas_page"):
             raise ValueError("invalid timeline kind")
         def run(store):
             rows = store.timeline(start, end, kind, limit)
@@ -201,6 +201,9 @@ class QueryService:
             "message_last_synced_at": store.last_sync("message"),
             "note_last_synced_at": store.last_sync("note"),
             "voice_memo_last_synced_at": store.last_sync("voice_memo"),
+            "canvas_module_last_synced_at": store.last_sync("canvas_module"),
+            "canvas_module_item_last_synced_at": store.last_sync("canvas_module_item"),
+            "canvas_page_last_synced_at": store.last_sync("canvas_page"),
             "canvas_course_last_synced_at": store.last_sync("canvas_course"),
             "canvas_assignment_last_synced_at": store.last_sync("canvas_assignment"),
             "canvas_announcement_last_synced_at": store.last_sync("canvas_announcement"),

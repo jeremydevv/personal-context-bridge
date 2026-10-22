@@ -78,7 +78,7 @@ class McpIntegrationTests(unittest.IsolatedAsyncioTestCase):
                                       "apple_contact_activity", "apple_message_attachment_info",
                                       "read_apple_message_attachment_text", "read_apple_message_attachment_chunk",
                                       "view_apple_message_image", "canvas_status", "search_canvas", "canvas_inbox",
-                                      "get_canvas_record", "upcoming_canvas_assignments",
+                                      "get_canvas_record", "upcoming_canvas_assignments", "canvas_modules", "canvas_module_items",
                                       "read_canvas_file_text", "canvas_pdf_info", "view_canvas_pdf_page", "search_apple_voice_memo", "get_apple_voice_memo_record",
                                       "read_apple_voice_memo_transcript", "apple_voice_memo_timeline",
                                       "apple_voice_memo_status"}, names)

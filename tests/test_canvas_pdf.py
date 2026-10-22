@@ -36,7 +36,7 @@ class CanvasPdfTests(unittest.TestCase):
         client = Mock()
         client.pages.side_effect = [[{'id': 7, 'name': 'Fictional'}], [], [],
             [{'id': 9, 'display_name': 'Worksheet', 'filename': 'chart.pdf',
-              'url': 'https://canvas.example.invalid/file'}], [], []]
+              'url': 'https://canvas.example.invalid/file'}], [], [], []]
         client.download.return_value = graph_pdf()
         with patch('personal_context.canvas_collect.extract', side_effect=OSError('missing pdftotext')):
             record = collect_batches(client, 'demo', download_files=True)[3]['records'][0]

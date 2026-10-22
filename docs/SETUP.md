@@ -115,11 +115,35 @@ disable Canvas's automatic mark-as-read behavior, so collection does not change
 Inbox state. Use `canvas_inbox` to list threads, `search_canvas` to search them,
 and `get_canvas_record` with `kind="conversation"` to read a full thread. This is
 Canvas Inbox data, separate from Apple Mail. It follows complete pagination
-before marking snapshots complete. API failures abort before ingest. File
+before marking snapshots complete. Unexpected API failures abort before ingest. File
 extraction failures are recorded as unavailable. Canvas API tokens are sent only
 to the configured origin; signed file redirects receive no token on another origin.
 An empty course inventory retires that account's archived course-linked records;
 inbox and archived conversation snapshots are tracked separately.
+
+Module collection reads `/courses/:course_id/modules` and each module's separately
+paginated `/items` endpoint; it does not rely on optional inline item arrays.
+`canvas_modules(course_record_id)` lists modules in course order;
+`canvas_module_items(module_record_id)` lists items in module order. Both accept
+`limit` and `offset` and return totals, scope sync time and collection status.
+States, prerequisites, indentation, completion requirements and content details
+are retained. These reads do not mark items done, record progress, or launch tools.
+
+Linked Canvas Pages are collected once per course with original HTML and extracted
+text. Use `search_canvas(kind="page")` or `get_canvas_record(kind="page", record_id=...)`.
+Items include `linked_record_id` for archived Pages, Assignments and Files. Quiz,
+Discussion, ExternalUrl and ExternalTool items retain metadata and links; their
+content is not fetched by module collection, and external URLs/tools are never
+followed. Linked file availability still depends on existing file collection.
+
+A module/items HTTP 403 or 404 marks that course's `payload.module_collection`
+unavailable and omits new module snapshots for it, preserving earlier snapshots
+with their earlier timestamps. It does not claim an empty course. Linked page
+403/404 responses are explicit unavailable placeholders without old page text;
+locked pages retain the API's lock information. Module, item and page counts and
+sync times are reported separately in `canvas_status`, alongside the number of
+courses with unavailable module access. Successful empty snapshots retire removed
+modules, items and linked pages; course removal retires all three kinds.
 
 The original Mac deployment's separate Canvas collector is not distributed here;
 this portable collector provides the same archive record kinds and MCP queries.

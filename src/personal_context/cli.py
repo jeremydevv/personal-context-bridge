@@ -1,6 +1,7 @@
 """Local collection, SSH transfer, and server-side ingest entrypoints."""
 
 import argparse
+import fcntl
 import json
 import os
 import re
@@ -8,6 +9,7 @@ import shlex
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
+from contextlib import contextmanager
 from pathlib import Path
 
 from .collect import collect_batches, collect_recent_calendar, run_cli
@@ -22,6 +24,21 @@ from .store import Store
 
 
 SERVER_KEY_PATH = os.environ.get("PERSONAL_CONTEXT_REMOTE_KEY_FILE", "/run/personal-context-bridge/archive.key")
+
+
+@contextmanager
+def ingestion_lock(database):
+    """Queue concurrent ingest processes before they open a writable archive.
+
+    Readers use read-only connections and do not take this gate. The caller's
+    transport timeout bounds waiting; its durable spool retains unsent batches.
+    """
+    path = Path(database).expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(str(path) + ".ingest.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "a+b") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
 
 
 def spool_path_for(root, action, lane):
@@ -84,7 +101,7 @@ def deliver_ssh(config, payload, timeout=180):
         "-o", "ConnectionAttempts=1", config["remote_host"], remote_command,
     ], input=payload, capture_output=True, timeout=timeout)
     if result.returncode:
-        raise RuntimeError("remote ingest failed: " + result.stderr.decode(errors="replace")[:500])
+        raise RuntimeError("remote ingest failed: " + result.stderr.decode(errors="replace")[-500:])
 
 
 def remote_image_command(config, action, *extra):
@@ -235,7 +252,7 @@ def main(argv=None):
         return voice_main(command)
     if args.action == "image-index":
         require_archive_key()
-        store = Store(args.db)
+        store = Store(args.db, read_only=True)
         try:
             print(json.dumps({"images": store.image_attachment_index()}))
         finally:
@@ -243,7 +260,7 @@ def main(argv=None):
         return 0
     if args.action == "attachment-index":
         require_archive_key()
-        store = Store(args.db)
+        store = Store(args.db, read_only=True)
         try:
             print(json.dumps({"attachments": store.message_attachment_index()}))
         finally:
@@ -259,12 +276,13 @@ def main(argv=None):
         metadata = blobs.ingest(sys.stdin.buffer, max_bytes=args.bytes)
         if metadata["bytes"] != args.bytes:
             raise ValueError("transferred image size did not match source metadata")
-        store = Store(args.db)
-        try:
-            store.upsert_image_attachment(args.guid, metadata["object_id"], args.mime_type,
-                                          args.bytes, args.mtime_ns, metadata["sha256"])
-        finally:
-            store.close()
+        with ingestion_lock(args.db):
+            store = Store(args.db)
+            try:
+                store.upsert_image_attachment(args.guid, metadata["object_id"], args.mime_type,
+                                              args.bytes, args.mtime_ns, metadata["sha256"])
+            finally:
+                store.close()
         print(json.dumps({"ok": True, "sha256": metadata["sha256"],
                           "object_id": metadata["object_id"], "bytes": metadata["bytes"]}))
         return 0
@@ -278,12 +296,13 @@ def main(argv=None):
         metadata = blobs.ingest(sys.stdin.buffer, max_bytes=args.bytes)
         if metadata["bytes"] != args.bytes:
             raise ValueError("transferred attachment size did not match source metadata")
-        store = Store(args.db)
-        try:
-            store.upsert_message_attachment(args.guid, metadata["object_id"], args.mime_type,
-                                            args.bytes, args.mtime_ns, metadata["sha256"])
-        finally:
-            store.close()
+        with ingestion_lock(args.db):
+            store = Store(args.db)
+            try:
+                store.upsert_message_attachment(args.guid, metadata["object_id"], args.mime_type,
+                                                args.bytes, args.mtime_ns, metadata["sha256"])
+            finally:
+                store.close()
         print(json.dumps({"ok": True, "sha256": metadata["sha256"],
                           "object_id": metadata["object_id"], "bytes": metadata["bytes"]}))
         return 0
@@ -298,18 +317,19 @@ def main(argv=None):
             if not isinstance(batch, dict):
                 raise ValueError("ingest batch must be an object")
             Store._validate(batch)
-        store = Store(args.db)
-        try:
-            for batch in batches:
-                store.ingest(batch)
-        finally:
-            store.close()
+        with ingestion_lock(args.db):
+            store = Store(args.db)
+            try:
+                for batch in batches:
+                    store.ingest(batch)
+            finally:
+                store.close()
         print(json.dumps({"ok": True, "batches": len(batches),
                           "count": sum(len(batch["records"]) for batch in batches)}))
         return 0
     if args.action == "status":
         require_archive_key()
-        store = Store(args.db)
+        store = Store(args.db, read_only=True)
         try:
             print(json.dumps({"calendar_last_sync": store.last_sync("calendar"),
                               "reminder_last_sync": store.last_sync("reminder"),
@@ -356,7 +376,7 @@ def main(argv=None):
         destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         destination.parent.chmod(0o700)
         key = Path(os.environ["PERSONAL_CONTEXT_KEY_FILE"]).read_bytes()
-        source = Store(args.db)
+        source = Store(args.db, read_only=True)
         target = driver.connect(str(destination))
         try:
             target.execute("PRAGMA key = \"x'" + key.hex() + "'\"")
@@ -367,7 +387,7 @@ def main(argv=None):
             with destination.open("rb") as stream:
                 if stream.read(16) == b"SQLite format 3\x00":
                     raise RuntimeError("backup is unexpectedly plaintext")
-            verify = Store(destination)
+            verify = Store(destination, read_only=True)
             verify.close()
         except Exception:
             target.close()

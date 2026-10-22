@@ -2,6 +2,9 @@ import io
 import json
 import tempfile
 import unittest
+import fcntl
+import threading
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -9,6 +12,57 @@ from personal_context.cli import main
 
 
 class CliSecurityTests(unittest.TestCase):
+    def test_ingestion_waits_for_other_ingestion_before_opening_archive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "archive.sqlite3"
+            lock = Path(str(database) + ".ingest.lock").open("ab")
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            payload = {"schema": 1, "source": "apple-pim", "kind": "calendar",
+                       "scope": "test", "collected_at": "2026-10-01T00:00:00Z",
+                       "complete": False, "records": [{"id": "fictional", "title": "Fixture"}]}
+            failures = []
+            def ingest():
+                try:
+                    main(["ingest-stdin", "--db", str(database)])
+                except BaseException as exc:
+                    failures.append(exc)
+            with patch("personal_context.cli.require_archive_key"), \
+                 patch("sys.stdin", io.StringIO(json.dumps(payload))), \
+                 patch("sys.stdout", new_callable=io.StringIO):
+                thread = threading.Thread(target=ingest)
+                thread.start()
+                try:
+                    time.sleep(0.2)
+                    self.assertFalse(database.exists(), "ingestion opened the archive while another writer held its gate")
+                finally:
+                    fcntl.flock(lock, fcntl.LOCK_UN)
+                    lock.close()
+                    thread.join(timeout=10)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual([], failures)
+            from personal_context.store import Store
+            store = Store(database, read_only=True)
+            try:
+                self.assertEqual("Fixture", store.get("calendar", "fictional")["title"])
+            finally:
+                store.close()
+
+    def test_attachment_inventory_can_read_during_ingestion(self):
+        from personal_context.store import Store
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "archive.sqlite3"
+            store = Store(database)
+            try:
+                store.db.execute("BEGIN IMMEDIATE")
+                with patch("personal_context.cli.require_archive_key"), \
+                     patch("sys.stdout", new_callable=io.StringIO) as output:
+                    code = main(["attachment-index", "--db", str(database)])
+                self.assertEqual(0, code)
+                self.assertEqual([], json.loads(output.getvalue())["attachments"])
+            finally:
+                store.db.rollback()
+                store.close()
+
     def test_all_reminders_selects_visible_lists_and_queues_inventory(self):
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "config.json"

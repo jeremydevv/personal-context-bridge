@@ -327,7 +327,7 @@ class Store:
                 }
                 serialized = json.dumps(snapshot, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
                 digest = hashlib.sha256(serialized.encode()).hexdigest()
-                old = self.db.execute("SELECT digest, deleted FROM records WHERE kind=? AND id=?", (kind, record_id)).fetchone()
+                old = self.db.execute("SELECT digest,deleted,title,body FROM records WHERE kind=? AND id=?", (kind, record_id)).fetchone()
                 if old and old["digest"] == digest and not old["deleted"]:
                     continue
                 self.db.execute("""
@@ -341,10 +341,12 @@ class Store:
                       item.get("start"), item.get("end"), json.dumps(item.get("payload", {}), ensure_ascii=False), digest, timestamp))
                 self.db.execute("INSERT INTO versions(kind,id,captured_at,deleted,snapshot) VALUES(?,?,?,0,?)",
                                 (kind, record_id, timestamp, serialized))
-                if old and not old["deleted"]:
-                    self.db.execute("DELETE FROM records_fts WHERE kind=? AND id=?", (kind, record_id))
-                self.db.execute("INSERT INTO records_fts(kind,id,title,body) VALUES(?,?,?,?)",
-                                (kind, record_id, item["title"], item.get("body", "")))
+                if (not old or old["deleted"] or old["title"] != item["title"]
+                        or old["body"] != item.get("body", "")):
+                    if old and not old["deleted"]:
+                        self.db.execute("DELETE FROM records_fts WHERE kind=? AND id=?", (kind, record_id))
+                    self.db.execute("INSERT INTO records_fts(kind,id,title,body) VALUES(?,?,?,?)",
+                                    (kind, record_id, item["title"], item.get("body", "")))
                 if kind in ("mail", "message"):
                     self.db.execute("DELETE FROM record_identifiers WHERE kind=? AND id=?", (kind, record_id))
                     self.db.executemany("""

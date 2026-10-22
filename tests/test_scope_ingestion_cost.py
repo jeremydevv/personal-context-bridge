@@ -7,6 +7,38 @@ from personal_context.store import Store
 
 
 class ScopeIngestionCostTests(unittest.TestCase):
+    def test_metadata_updates_preserve_search_without_scanning_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "archive.sqlite3")
+            try:
+                batch = dict(schema=1, source="apple-pim", kind="calendar", scope="fixture",
+                             collected_at="2026-10-22T00:00:00Z", complete=True,
+                             records=[dict(id=str(i), title="Fixture", body="Searchable", payload={})
+                                      for i in range(2500)])
+                store.ingest(batch)
+                changed = [dict(r, payload={"metadata": "new"}) for r in batch["records"][:25]]
+                callbacks = 0
+
+                def budget():
+                    nonlocal callbacks
+                    callbacks += 1
+                    return int(callbacks > 100)
+
+                store.db.set_progress_handler(budget, 500)
+                try:
+                    store.ingest(dict(batch, collected_at="2026-10-22T01:00:00Z",
+                                      complete=False, records=changed))
+                except sqlite3.OperationalError as exc:
+                    self.fail("Metadata update exhausted its query budget: " + str(exc))
+                finally:
+                    store.db.set_progress_handler(None, 0)
+                self.assertEqual({"metadata": "new"}, store.get("calendar", "0")["payload"])
+                self.assertEqual(2, store.version_count("calendar", "0"))
+                self.assertEqual(2500, store.db.execute(
+                    "SELECT count(*) FROM records_fts WHERE records_fts MATCH 'Searchable'").fetchone()[0])
+            finally:
+                store.close()
+
     def test_retiring_a_scope_does_not_rescan_search_for_each_record(self):
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "archive.sqlite3")

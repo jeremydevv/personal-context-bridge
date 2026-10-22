@@ -53,6 +53,37 @@ def _calendar_window(batch):
     return start, end
 
 
+def _calendar_quarantine(batch, path):
+    # Optional private exact-ID/digest quarantine; never an unbounded title rule.
+    if batch.get("source") != "apple-pim" or batch.get("kind") != "calendar" or not path.exists():
+        return batch
+    if path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o077 or path.stat().st_size > 262144:
+        raise ValueError("calendar quarantine must be a private regular file")
+    guard = json.loads(path.read_text())
+    if (set(guard) != {"schema", "source", "kind", "scope", "expected_id_digest"}
+            or guard["schema"] != 1 or guard["source"] != "apple-pim" or guard["kind"] != "calendar"
+            or not isinstance(guard["scope"], str) or not re.fullmatch(r"calendar:.+:[0-9]{4}-[0-9]{4}", guard["scope"])
+            or not isinstance(guard["expected_id_digest"], dict) or not 1 <= len(guard["expected_id_digest"]) <= 1000
+            or any(not isinstance(k, str) or not k or not isinstance(v, str) or not re.fullmatch(r"[0-9a-f]{64}", v)
+                   for k, v in guard["expected_id_digest"].items())):
+        raise ValueError("invalid exact calendar quarantine manifest")
+    if batch["scope"] != guard["scope"]:
+        return batch
+    kept = []
+    for item in batch["records"]:
+        expected = guard["expected_id_digest"].get(item["id"])
+        if expected is None:
+            kept.append(item)
+            continue
+        snapshot = {k: batch[k] for k in ("source", "kind", "scope")}
+        snapshot.update({"id": item["id"], "title": item["title"], "body": item.get("body", ""),
+                         "start": item.get("start"), "end": item.get("end"), "payload": item.get("payload", {})})
+        serialized = json.dumps(snapshot, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        if hashlib.sha256(serialized.encode()).hexdigest() != expected:
+            raise ValueError("quarantined calendar identity changed; review required")
+    return dict(batch, records=kept)
+
+
 class Store:
     def __init__(self, path, key_file=None, read_only=False):
         path = Path(path)
@@ -220,6 +251,7 @@ class Store:
 
     def ingest(self, batch):
         self._validate(batch)
+        batch = _calendar_quarantine(batch, self.path.parent / "calendar-quarantine.json")
         if batch["kind"] == "inventory":
             return self._ingest_inventory(batch)
         kind, source, scope, timestamp = (batch[key] for key in ("kind", "source", "scope", "collected_at"))

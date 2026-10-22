@@ -119,6 +119,35 @@ import EventKit
         var denied = false
         do { try requireInvitationConsent(true,false) } catch { denied = true }
         try require(denied,"existing attendees did not require explicit delivery consent")
-        print("Native dates, DST, all-day, fields, clears and end-only recurrence regressions passed (unsaved objects only).")
+        let travel = try event("2031-11-02T17:00:00Z", "2031-11-02T18:00:00Z")
+        travel.title = "Fictional travel fixture"
+        travel.notes = "Preserve these notes"
+        travel.location = "Fictional location"
+        travel.addAlarm(EKAlarm(relativeOffset: -1800))
+        for seconds in [2400, 2700, 0, 604800] {
+            try applyFields(["travel_seconds":seconds], travel, "calendar")
+            try require((travel.value(forKey:"travelTime") as? NSNumber)?.intValue == seconds, "explicit duration lost")
+            try require(travel.title == "Fictional travel fixture" && travel.notes == "Preserve these notes", "duration changed text")
+            try require(travel.startDate == (try date("2031-11-02T17:00:00Z")) && travel.endDate == (try date("2031-11-02T18:00:00Z")), "duration shifted event")
+            try require(travel.location == "Fictional location" && travel.alarms?.count == 1 && !travel.hasRecurrenceRules, "duration changed unrelated fields")
+        }
+        for invalid: Any in [true, -60, 1, 2400.5, "2400", NSNull(), 604860] {
+            var denied = false
+            do { try applyFields(["travel_seconds":invalid], travel, "calendar") } catch { denied = true }
+            try require(denied, "invalid explicit duration accepted")
+        }
+        var mixedDenied = false
+        do { try applyFields(["travel_seconds":2400, "notes":"Wrong"], travel, "calendar") } catch { mixedDenied = true }
+        try require(mixedDenied && travel.notes == "Preserve these notes", "mixed patch mutated event")
+        travel.addRecurrenceRule(EKRecurrenceRule(recurrenceWith:.weekly, interval:1, end:nil))
+        var recurringDenied = false
+        do { try applyFields(["travel_seconds":2400], travel, "calendar") } catch { recurringDenied = true }
+        try require(recurringDenied && travel.hasRecurrenceRules, "recurring travel write accepted")
+        travel.recurrenceRules = nil
+        travel.isAllDay = true
+        var allDayDenied = false
+        do { try applyFields(["travel_seconds":2400], travel, "calendar") } catch { allDayDenied = true }
+        try require(allDayDenied, "all-day travel write accepted")
+        print("Native dates, DST, all-day, fields, clears, recurrence and explicit travel regressions passed (unsaved objects only).")
     }
 }

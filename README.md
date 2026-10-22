@@ -85,6 +85,13 @@ For opt-in native Calendar and Reminders editing, see
 [direct MCP editing](docs/APPLE-PIM-EDITING.md): exact-ID updates/deletes,
 calendar/list selection, alerts, driving estimates, real Urgent alarms and subtasks.
 
+`set_apple_calendar_travel_time` edits the native travel duration without routing
+or phone-location access. Supply a live inspected ID, occurrence start, revision,
+and `duration_minutes` (0–10080 whole minutes; 0 clears). The initial adapter
+supports timed, nonrecurring, non-detached events without attendees, with this-event
+scope only. It verifies persisted seconds and preserves all other inspected
+fields. It does not enable dynamic travel updates or guarantee notification delivery.
+
 Archives use SQLCipher; binary attachments use authenticated AES-GCM encryption.
 Keys and upload credentials are separate files created with mode 0600 in a
 private directory. Keep a secure recovery copy of the key: losing it loses access

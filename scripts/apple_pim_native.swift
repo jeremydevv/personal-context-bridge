@@ -5,6 +5,7 @@ import EventKit
 import CoreLocation
 import CryptoKit
 import MapKit
+import CoreFoundation
 
 enum BridgeError: String, Error {
     case invalid_fields, item_not_found, revision_conflict, read_only
@@ -277,8 +278,16 @@ func endRecurrence(_ raw: Any?, _ event: EKEvent) throws {
 
 func applyFields(_ changes: [String: Any], _ item: EKCalendarItem, _ kind: String) throws {
     let common: Set<String> = ["title", "notes", "url", "alerts", "recurrence", "timezone"]
-    let allowed = common.union(kind == "calendar" ? ["start_at", "end_at", "location", "calendar", "all_day", "availability", "driving", "recurrence_end"] : ["due_at", "list_name", "priority", "completed", "location_alarm"])
+    let allowed = common.union(kind == "calendar" ? ["start_at", "end_at", "location", "calendar", "all_day", "availability", "driving", "recurrence_end", "travel_seconds"] : ["due_at", "list_name", "priority", "completed", "location_alarm"])
     guard Set(changes.keys).isSubset(of: allowed) else { throw BridgeError.unsupported_capability }
+    if let value = changes["travel_seconds"] {
+        guard changes.count == 1, let seconds = value as? NSNumber,
+              CFGetTypeID(seconds) != CFBooleanGetTypeID(), seconds.doubleValue == Double(seconds.intValue),
+              (0...604800).contains(seconds.intValue), seconds.intValue % 60 == 0 else { throw BridgeError.invalid_fields }
+        guard let event = item as? EKEvent, !event.isAllDay, !event.hasRecurrenceRules, !event.isDetached,
+              !event.hasAttendees, event.responds(to:NSSelectorFromString("setTravelTime:")) else { throw BridgeError.unsupported_capability }
+        event.setValue(seconds, forKey:"travelTime")
+    }
     if let value = changes["title"] { item.title = try string(value) }
     if let value = changes["notes"] { item.notes = try string(value) }
     if let value = changes["url"] {
@@ -444,6 +453,10 @@ func verify(_ changes: [String: Any], _ item: EKCalendarItem, _ kind: String,
             expectedRules: [String], expectedLocationAlarms: [String], previousDue: Date?) throws {
     // Comparing each requested property avoids accepting provider-normalized changes silently.
     let value = try record(item)
+    if let seconds = changes["travel_seconds"] as? NSNumber {
+        guard let event = item as? EKEvent, event.responds(to:NSSelectorFromString("travelTime")),
+              (event.value(forKey:"travelTime") as? NSNumber)?.doubleValue == seconds.doubleValue else { throw BridgeError.verification_failed }
+    }
     for key in ["title", "notes", "url", "location", "all_day", "completed", "priority"] where changes[key] != nil {
         if key == "completed", changes[key] as? Bool == true, let reminder = item as? EKReminder,
            !reminder.isCompleted, reminder.hasRecurrenceRules, let old = previousDue,
@@ -493,6 +506,12 @@ func verify(_ changes: [String: Any], _ item: EKCalendarItem, _ kind: String,
         let values: [String: EKEventAvailability] = ["busy": .busy, "free": .free, "tentative": .tentative, "unavailable": .unavailable]
         guard event.availability == values[name] else { throw BridgeError.verification_failed }
     }
+}
+
+func preservedTravelFields(_ item: EKCalendarItem) throws -> Data {
+    var snapshot = try record(item)
+    for key in ["travel_seconds", "modified_at", "modified_epoch"] { snapshot.removeValue(forKey:key) }
+    return try encoded(snapshot)
 }
 
 func timing(_ item: EKCalendarItem) -> [String: Any] {
@@ -634,6 +653,11 @@ struct NativeBridge {
             if let reminder = item as? EKReminder, let components = reminder.dueDateComponents {
                 previousDue = components.date ?? Calendar(identifier: .gregorian).date(from: components)
             }
+            var travelBaseline: Data?
+            if changes["travel_seconds"] != nil {
+                guard operation == "update", scope == "this" else { throw BridgeError.invalid_fields }
+                travelBaseline = try preservedTravelFields(item)
+            }
             try applyFields(changes, item, kind)
             let expectedRules = try (item.recurrenceRules ?? []).map { String(data: try encoded(ruleRecord($0)), encoding: .utf8)! }.sorted()
             let expectedLocationAlarms = try (item.alarms ?? []).filter { $0.structuredLocation != nil }.map { String(data: try encoded(alarmRecord($0)), encoding: .utf8)! }.sorted()
@@ -652,6 +676,9 @@ struct NativeBridge {
                 try verifyOccurrenceSnapshot(before, occurrenceSnapshot(store.events(matching:predicate)))
             } else if recurrenceWindow != nil { throw BridgeError.verification_failed }
             try verify(changes, saved, kind, expectedRules: expectedRules, expectedLocationAlarms: expectedLocationAlarms, previousDue: previousDue)
+            if let baseline = travelBaseline {
+                guard try preservedTravelFields(saved) == baseline else { throw BridgeError.verification_failed }
+            }
             output(["success": true, "verified": true, "item_id": newID, "revision": try revision(saved), "timing": timing(saved)])
         } catch {
             var result: [String: Any] = ["success": false, "error_code": (error as? BridgeError)?.rawValue ?? "native_error", "write_started": privateWriteStarted ?? writeStarted]

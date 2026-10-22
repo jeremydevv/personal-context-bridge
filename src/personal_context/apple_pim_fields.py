@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 COMMON = {'title', 'notes', 'url', 'alerts', 'recurrence', 'timezone'}
-EVENT = COMMON | {'start_at', 'end_at', 'location', 'calendar', 'all_day', 'availability', 'driving', 'recurrence_end'}
+EVENT = COMMON | {'start_at', 'end_at', 'location', 'calendar', 'all_day', 'availability', 'driving', 'recurrence_end', 'travel_seconds'}
 REMINDER = COMMON | {'due_at', 'list_name', 'priority', 'completed', 'location_alarm'}
 EXTENDED = {'location', 'url', 'alerts', 'recurrence', 'timezone', 'all_day',
             'availability', 'priority', 'completed', 'location_alarm', 'driving'}
@@ -43,6 +43,9 @@ def changes(kind, fields):
             if type(value) is not int or value not in (0, 1, 5, 9): raise ValueError('invalid priority')
         elif key == 'availability':
             if value not in ('busy', 'free', 'tentative', 'unavailable'): raise ValueError('invalid availability')
+        elif key == 'travel_seconds':
+            if set(fields) != {'travel_seconds'} or type(value) is not int or not 0 <= value <= 604800 or value % 60:
+                raise ValueError('explicit travel duration must be a duration-only patch, 0 through 10080 whole minutes')
         elif key == 'driving':
             if value is None: continue
             if not isinstance(value, dict) or set(value) != {'seconds', 'computed_at', 'origin_observed_at', 'latitude', 'longitude', 'destination'}:
@@ -133,6 +136,9 @@ def edit(kind, payload):
                 if 'notes' in child: text(child['notes'], 'subtask notes', 20000)
         return payload.copy()
     if payload['operation'] == 'update':
+        if isinstance(payload.get('changes'), dict) and 'travel_seconds' in payload['changes']:
+            if kind != 'calendar' or payload['scope'] != 'this':
+                raise ValueError('explicit travel duration requires calendar this scope')
         if isinstance(payload.get('changes'), dict) and 'recurrence_end' in payload['changes']:
             patch = changes(kind, payload['changes'])['recurrence_end']
             if kind != 'calendar' or payload['scope'] != 'future':

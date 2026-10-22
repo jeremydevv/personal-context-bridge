@@ -115,3 +115,21 @@ class WriteMcpTests(unittest.IsolatedAsyncioTestCase):
             data = json.loads(capabilities.content[0].text)
             self.assertIn('recurrence_end', data['fields'])
             self.assertIn('constraints',data)
+
+    async def test_explicit_travel_duration_has_bounded_schema_and_queues_without_routing(self):
+        async with self.session() as session:
+            tools = {t.name: t for t in (await session.list_tools()).tools}
+            tool = tools['set_apple_calendar_travel_time']
+            duration = tool.inputSchema['properties']['duration_minutes']
+            self.assertEqual(0, duration['minimum'])
+            self.assertEqual(10080, duration['maximum'])
+            self.assertNotIn('scope', tool.inputSchema['properties'])
+            args = dict(request_key='explicit-40', item_id='fictional-event',
+                occurrence_start_at='2031-11-02T17:00:00Z', expected_revision='a' * 64,
+                duration_minutes=40)
+            result = await session.call_tool(tool.name, args)
+            self.assertFalse(result.isError, str(result.content))
+            self.assertEqual('queued', json.loads(result.content[0].text)['state'])
+            for value in [-1, 10081, True, 1.5]:
+                result = await session.call_tool(tool.name, args | {'duration_minutes': value})
+                self.assertTrue(result.isError)

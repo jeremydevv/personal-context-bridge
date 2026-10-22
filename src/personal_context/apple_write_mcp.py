@@ -1,5 +1,7 @@
 """Opt-in native write tools shared by the Calendar and Reminders surfaces."""
 import os
+from typing import Annotated
+from pydantic import Field
 from . import apple_write_queue as queue
 from .apple_write_worker import transport_config
 from .apple_write_worker import read_native
@@ -118,6 +120,17 @@ def register(mcp, source):
             return queue.queue_job(source, request_key, fields, automatic_identity=True)
         mcp.tool(name='set_apple_calendar_driving_time', annotations=edit)(driving_event)
 
+        def travel_time_event(request_key: str, item_id: str, occurrence_start_at: str,
+                              expected_revision: str,
+                              duration_minutes: Annotated[int, Field(strict=True, ge=0, le=10080)]) -> dict:
+            """Set the actual native Calendar travel-time duration to 0–10080 whole minutes; 0 clears it. Inspect the live exact event first and pass its revision and original occurrence start. Only writable, timed, nonrecurring, non-detached events without attendees are supported; scope is always this event. Preserves dates, destination, ordinary alerts and other fields, with exact persisted readback. Does not calculate a route, read phone location, change transport preferences or enable dynamic travel updates. Reuse request_key for identical retries. Queued is not completion; check job status. An offline Mac delays application; stale revisions fail safely. Unsupported macOS/providers fail explicitly."""
+            if type(duration_minutes) is not int or not 0 <= duration_minutes <= 10080:
+                raise ValueError('duration_minutes must be an integer from 0 through 10080')
+            return queue.queue_job(source, request_key, dict(operation='update', item_id=item_id,
+                occurrence_start_at=occurrence_start_at, expected_revision=expected_revision,
+                scope='this', changes={'travel_seconds': duration_minutes * 60}))
+        mcp.tool(name='set_apple_calendar_travel_time', annotations=edit)(travel_time_event)
+
         def attendees_event(request_key: str, item_id: str, occurrence_start_at: str, expected_revision: str,
                             scope: str, allow_invitation_delivery: bool, add: list[Attendee] | None = None,
                             remove: list[str] | None = None) -> dict:
@@ -201,6 +214,7 @@ def register(mcp, source):
                     constraints=dict(all_day_timezone='Mac local timezone; foreign-zone floating days rejected',
                         recurrence_replacement='frequency/interval/count/until plus weekly weekdays; use recurrence_end to preserve selectors',
                         recurrence_end='future scope; non-detached existing series; at most four years and 10000 snapshot events',
+                        travel_seconds='duration-only this-event update; 0–604800 seconds in whole minutes; timed nonrecurring non-detached events without attendees only; dedicated tool accepts minutes',
                         invitation_delivery='explicit per-action consent; account capabilities still apply'),
                     delivery='encrypted Ubuntu queue to authorized Mac; offline Mac delays writes')
     mcp.tool(name='apple_pim_capabilities', annotations=read)(capabilities)

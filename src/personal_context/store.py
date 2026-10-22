@@ -355,6 +355,7 @@ class Store:
             if batch["complete"] or window is not None:
                 existing = self.db.execute("SELECT id,start FROM records WHERE source=? AND kind=? AND scope=? AND deleted=0",
                                            (source, kind, scope)).fetchall()
+                retired_ids = []
                 for row in existing:
                     if row["id"] in incoming:
                         continue
@@ -370,9 +371,16 @@ class Store:
                                     (timestamp, kind, row["id"]))
                     self.db.execute("INSERT INTO versions(kind,id,captured_at,deleted,snapshot) VALUES(?,?,?,1,NULL)",
                                     (kind, row["id"], timestamp))
-                    self.db.execute("DELETE FROM records_fts WHERE kind=? AND id=?", (kind, row["id"]))
+                    retired_ids.append(row["id"])
                     if kind in ("mail", "message"):
                         self.db.execute("DELETE FROM record_identifiers WHERE kind=? AND id=?", (kind, row["id"]))
+                # kind/id are unindexed FTS columns. Group removals so a scope
+                # retirement scans search content once per bounded chunk.
+                for offset in range(0, len(retired_ids), 500):
+                    chunk = retired_ids[offset:offset + 500]
+                    placeholders = ",".join("?" for _ in chunk)
+                    self.db.execute("DELETE FROM records_fts WHERE kind=? AND id IN (" + placeholders + ")",
+                                    (kind, *chunk))
                 if kind == "canvas_course":
                     # Course removal also retires its assignments, announcements and files.
                     prefix = scope + ":course:"

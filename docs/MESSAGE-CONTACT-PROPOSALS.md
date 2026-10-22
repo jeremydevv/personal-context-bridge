@@ -43,29 +43,47 @@ same claim does not undo it. There is deliberately no approve/apply/write comman
 
 ## Extraction and attribution
 
-V1 recognizes only whole-message English statements in these forms:
+The conversational v2 recognizer finds explicit sender-owned facts embedded in
+ordinary English messages, including greetings, extra sentences, ordinal days,
+month abbreviations and more than one field in a message. Examples:
 
-- `My birthday is February 29.` or `My birthday is June 4, 1992.`
-- `My home address is 123 Maple Street.`
-- `My work address is 456 Oak Avenue, Example City, CA 90000.`
+- `Hey! My bday’s on June 4th 😊`
+- `Oh, I was born on the 4th of June, 1992. How about you?`
+- `My birthday is coming up on March 8.`
+- `Sure, I live at 123 Maple Street. Come by sometime!`
+- `I just moved to 123 Maple Street, Example City, CA 90000!`
+- `My office is at 456 Oak Avenue, Example City, CA 90000.`
+- `Here’s my address: 123 Maple Street` (label unknown, blocked for review).
 
-Birthday month names must be explicit. Optional years are preserved only when
-stated; an absent year remains absent. Yearless leap days are valid. Invalid or
-future birth dates, numeric/relative dates, age claims and appointment dates are
-not extracted. Address support is intentionally narrow: numbered streets with
-recognized English suffixes, optional Apt/Unit, and optional US-style city/state
-and ZIP. It stores the stated address string and explicit Home/Work label; it does
-not infer missing components, geocode, or assert deliverability.
+Birthdays support month-first and day-first named dates, ordinal suffixes and
+optional explicitly stated years. No year is inferred from age, message time,
+summary text or archived birthday representations. Invalid/future birth dates and
+ambiguous numeric/relative dates abstain. Address support remains limited to numbered
+streets with recognized English suffixes, optional Apt/Unit/Suite and optional
+US-style city/state/ZIP. Stated strings remain partial when incomplete; there is no
+geocoding or verification of deliverability. Residence/work labels come from explicit
+meaning (`I live at`, `my office`); generic `my address` has a null label and is
+blocked rather than silently assigned Home.
 
-Only available incoming iMessage/SMS text from a direct chat is considered. The
-source must explicitly identify direction, system/spam flags and chat membership.
-Outgoing messages, groups, replies, attachments, reactions, retractions, unknown
-services and unsupported text abstain. Source is `payload.text`, never flattened
-search text, summaries or attachment names. Whole-message matching rejects obvious
-quotes, forwarding/context prefixes, hypothetical/temporary suffixes and embedded
-instructions. It cannot prove that a seemingly literal statement is sincere or
-was not an unmarked copy; these are suggestions only, with no calibrated confidence
-claim. Unsupported language/formats abstain rather than guess.
+Clear question-and-answer turns are supported: an outgoing `When’s your birthday?`
+followed by the same direct correspondent’s `June 4th` can propose a birthday;
+`Where do you live?` followed by an address can propose a residence. The question
+must be the immediately previous archived turn in the same single stable direct
+chat, within 24 hours, within the explicit scan scope. Multiple-topic questions,
+intervening turns, unknown reply targets, grouped participants, missing stable chat
+IDs and unresolved question forms abstain. A sender-only scan intentionally omits
+outgoing questions, so it does not infer facts from those answer fragments.
+
+Only available incoming iMessage/SMS text can produce proposals. Outgoing text can
+supply question context but never becomes a proposal’s subject. System/spam messages,
+retractions, reactions, attachments and unknown services are excluded. Text comes from
+original `payload.text`, never summaries, flattened search bodies or attachment names.
+Obvious quotes/forwarding, reported speech, negation, uncertainty, temporary stays,
+future/hypothetical moves and instruction-like content conservatively block extraction.
+Unsupported forms abstain rather than guess. This remains an explicit local rule
+recognizer, not a general semantic model or a calibrated confidence score. Unmarked
+copying, deceptive statements and sarcasm cannot be reliably proven absent; every
+result remains a human-review suggestion with native identity unverified.
 
 Sender resolution uses archived email/phone identifiers, never names or extracted
 values. Missing/duplicate matches are blocked. Phone senders require an explicit
@@ -93,7 +111,9 @@ scan bounds and local audit events, rather than whole conversations. Rejections
 survive rescans. SQLite transactions serialize ledger writes and keep each bounded
 scan atomic. This version has no network service and no scheduled worker.
 
-List/show revalidate source and contact/identifier snapshots. Edited/deleted source,
+List/show revalidate source and contact/identifier snapshots. Question-and-answer
+evidence also stores and validates the exact question record/digest and checks for
+new intervening turns in that chat. Edited/deleted source,
 changed contact snapshot, new ambiguous matches or policy changes invalidate that
 support; a claim becomes stale when it has no valid support. Unchanged supporting
 messages can keep the same claim reviewable. Revalidation describes the local
@@ -118,5 +138,6 @@ synthetic test cannot authorize a real contact update.
 
 Validation uses fictional encrypted archives and covers attribution, conflicts,
 source invalidation, deduplication, rejection, pagination, scope overflow, CLI use,
+conversational phrases, multiple fields, adjacent questions/answers, context invalidation,
 and preservation of the source archive. Native Contacts behavior is not tested by
 these tests.

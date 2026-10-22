@@ -15,7 +15,7 @@ START = '2026-10-01T00:00:00Z'
 END = '2026-10-04T00:00:00Z'
 
 
-class ContactProposalTests(unittest.TestCase):
+class ContactProposalFixture(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
@@ -61,6 +61,8 @@ class ContactProposalTests(unittest.TestCase):
             pipeline.scan(START, END)
             return pipeline.list()['proposals']
 
+
+class ContactProposalTests(ContactProposalFixture):
     def test_yearless_leap_birthday_has_evidence_but_never_write_authority(self):
         rows = self.scan([self.message()])
         self.assertEqual(1, len(rows))

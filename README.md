@@ -138,7 +138,7 @@ for tools, native alarm behavior, and rollout requirements.
 
 ### Messages-to-Contacts suggestions
 
-An optional local command extracts narrow birthday and Home/Work address suggestions
+An optional local command recognizes conversational birthday and address facts and stores suggestions
 into a separate encrypted ledger for human review. It has no Contacts writer,
 automatic scan, or external inference. See [proposal-only pipeline](docs/MESSAGE-CONTACT-PROPOSALS.md)
 for explicit bounded scans, evidence inspection and limitations.

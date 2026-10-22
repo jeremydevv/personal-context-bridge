@@ -4,7 +4,7 @@ Run explicitly with a bounded date scope. No model, network, scheduler or outbox
 integration. A reviewable suggestion is never an approved native contact patch.
 """
 import argparse
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -12,18 +12,12 @@ from pathlib import Path
 import re
 import sys
 
+from .contact_facts import extract, chat_key
 from .identifiers import contact_identifiers, normalize
 from .store import Store
 
-POLICY = 'explicit-self-statement-v1'
-MONTHS = ('January February March April May June July August September October November December').split()
-BIRTHDAY = re.compile(r'My birthday is (?P<value>(?P<month>' + '|'.join(MONTHS) +
-                      r') (?P<day>[0-9]{1,2})(?:, (?P<year>[0-9]{4}))?)\.?', re.I)
-ADDRESS = re.compile(
-    r'My (?P<label>home|work) address is (?P<value>[0-9]{1,6} '
-    r"(?:[A-Za-z]+ ){1,6}(?:Street|St|Road|Rd|Avenue|Ave|Lane|Ln|Drive|Dr|Court|Ct|Way|Boulevard|Blvd|Terrace|Ter|Place|Pl)"
-    r'(?: (?:Apt|Unit) [A-Za-z0-9-]{1,12})?'
-    r'(?:, [A-Za-z]+(?: [A-Za-z]+){0,3}, [A-Z]{2}(?: [0-9]{5}(?:-[0-9]{4})?)?)?)\.?', re.I)
+POLICY = 'conversational-local-v2'
+
 WRITE_BLOCKERS = ['proposal_only', 'native_identity_unverified', 'native_read_required',
                   'destination_writability_unverified', 'authorization_absent']
 
@@ -44,52 +38,6 @@ def absolute_time(value):
         return result.astimezone(timezone.utc)
     except (ValueError, AttributeError, TypeError) as exc:
         raise ValueError('absolute timestamp with offset required') from exc
-
-
-def candidate(record):
-    """Whole-message grammar intentionally abstains from conversational inference."""
-    p = record['payload']
-    if (not isinstance(p, dict) or p.get('contentAvailable') is not True
-            or p.get('fromMe') is not False or p.get('system') is not False
-            or p.get('spam') is not False or p.get('service') not in ('iMessage', 'SMS')
-            or p.get('retractedAt') or p.get('associatedMessageGuid')
-            or p.get('associatedMessageType') not in (None, 0) or p.get('replyToGuid')
-            or p.get('attachments') or not isinstance(p.get('sender'), str)):
-        return None
-    chats = p.get('chats')
-    if not isinstance(chats, list) or not chats:
-        return None
-    for chat in chats:
-        if not isinstance(chat, dict) or not isinstance(chat.get('participants'), list):
-            return None
-        participants = {normalize(v) for v in chat['participants']}
-        if None in participants or len(participants) != 1 or normalize(p['sender']) not in participants:
-            return None
-    text = p.get('text')
-    if not isinstance(text, str) or len(text) > 512:
-        return None
-    match = BIRTHDAY.fullmatch(text)
-    if match:
-        month = next(i for i, name in enumerate(MONTHS, 1) if name.lower() == match['month'].lower())
-        value = {'month': month, 'day': int(match['day'])}
-        if match['year']:
-            value['year'] = int(match['year'])
-        try:
-            birthday = date(value.get('year', 2000), month, value['day'])
-            if 'year' in value and birthday > absolute_time(record['start']).date():
-                return None
-        except (ValueError, KeyError):
-            return None
-        field = 'birthday'
-    else:
-        match = ADDRESS.fullmatch(text)
-        if not match:
-            return None
-        field = 'postal_address'
-        value = {'label': match['label'].lower(), 'formatted': match['value']}
-    return {'field': field, 'value': value, 'span_start': match.start('value'),
-            'span_end': match.end('value'),
-            'span_hash': hashlib.sha256(match['value'].encode()).hexdigest()}
 
 
 class ProposalPipeline:
@@ -216,14 +164,23 @@ class ProposalPipeline:
                     "SELECT id,source,start,payload,digest,captured_at FROM records "
                     "WHERE kind='message' AND id=?", (record_id,)).fetchone()
                 selected.append(dict(row, payload=json.loads(row['payload'])))
+            contexts = {}
+            previous_by_chat = {}
+            ordered = sorted(selected, key=lambda r: (absolute_time(r['start']), r['id']))
+            for record in ordered:
+                key = chat_key(record)
+                if key:
+                    contexts[record['id']] = previous_by_chat.get(key)
+                    previous_by_chat[key] = record
+            facts = [(record, fact) for record in ordered
+                     for fact in extract(record, contexts.get(record['id']))]
             count = 0
             with self.db:
-                for record in selected:
-                    fact = candidate(record)
-                    if fact is None:
-                        continue
+                for record, fact in facts:
                     p = record['payload']
                     contact, reasons = self._identity(p['sender'], contacts)
+                    identity_reasons = list(reasons)
+                    reasons.extend(fact.get('extraction_reasons', []))
                     baseline = None
                     if contact:
                         baseline = contact['digest']
@@ -241,7 +198,7 @@ class ProposalPipeline:
                     evidence = dict(fact, record_id=record['id'], source_digest=record['digest'],
                                     guid=p.get('guid'), sender=p['sender'], sent_at=record['start'],
                                     captured_at=record['captured_at'], contact_digest=baseline,
-                                    contact_id=document['contact_id'], identity_reasons=reasons,
+                                    contact_id=document['contact_id'], identity_reasons=identity_reasons,
                                     scope_start=start_time.isoformat(), scope_end=end_time.isoformat())
                     old = self.db.execute('SELECT document FROM proposals WHERE id=?', (ident,)).fetchone()
                     self.db.execute('INSERT INTO proposals(id,document) VALUES (?,?) '
@@ -276,10 +233,42 @@ class ProposalPipeline:
             contact, reasons = self._identity(e['sender'], contacts)
             if ((contact['id'] if contact else None) != e['contact_id']
                     or (contact['digest'] if contact else None) != e['contact_digest']
-                    or reasons != [r for r in e['identity_reasons'] if not r.startswith('existing_')]):
+                    or reasons != e['identity_reasons']):
                 continue
-            fact = candidate(record)
-            if not fact or fact['span_hash'] != e['span_hash']:
+            context = None
+            if e.get('context_record_id'):
+                context_row = self.archive.db.execute(
+                    "SELECT id,payload,digest,start FROM records WHERE kind='message' "
+                    "AND source='apple-local' AND id=? AND deleted=0", (e['context_record_id'],)).fetchone()
+                if not context_row or context_row['digest'] != e['context_digest']:
+                    continue
+                context = dict(context_row, payload=json.loads(context_row['payload']))
+                # New intervening turns can invalidate the conversational linkage.
+                context_time, answer_time = absolute_time(context['start']), absolute_time(record['start'])
+                interrupted = False
+                for other in self.archive.db.execute(
+                        "SELECT id,start FROM records WHERE kind='message' AND source='apple-local' "
+                        "AND deleted=0 AND julianday(start)>=julianday(?) AND julianday(start)<=julianday(?)",
+                        ((context_time-timedelta(seconds=1)).isoformat(), (answer_time+timedelta(seconds=1)).isoformat())):
+                    if other['id'] in (context['id'], record['id']):
+                        continue
+                    try:
+                        when = absolute_time(other['start'])
+                    except ValueError:
+                        continue
+                    if not (absolute_time(e['scope_start']) <= when < absolute_time(e['scope_end'])
+                            and context_time <= when <= answer_time):
+                        continue
+                    payload_row = self.archive.db.execute(
+                        "SELECT payload FROM records WHERE kind='message' AND id=?", (other['id'],)).fetchone()
+                    if chat_key({'payload': json.loads(payload_row[0])}) == chat_key(record):
+                        interrupted = True
+                        break
+                if interrupted:
+                    continue
+            matches = extract(record, context)
+            if not any(f['field'] == item['field'] and f['value'] == e['value']
+                       and f['span_hash'] == e['span_hash'] for f in matches):
                 continue
             e['span'] = record['payload']['text'][e['span_start']:e['span_end']]
             evidence.append(e)

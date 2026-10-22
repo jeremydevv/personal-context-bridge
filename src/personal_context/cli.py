@@ -89,7 +89,7 @@ def load_config(path):
     return config
 
 
-def deliver_ssh(config, payload, timeout=180):
+def deliver_ssh(config, payload, timeout=1800):
     remote_project = Path(config["remote_project"])
     remote_command = shlex.join([
         "env", "PERSONAL_CONTEXT_KEY_FILE=" + SERVER_KEY_PATH,

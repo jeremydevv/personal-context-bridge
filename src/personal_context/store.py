@@ -184,6 +184,7 @@ class Store:
             );
             CREATE INDEX IF NOT EXISTS records_upcoming ON records(kind, deleted, start);
             CREATE INDEX IF NOT EXISTS records_timeline ON records(deleted, start);
+            CREATE INDEX IF NOT EXISTS records_scope ON records(source, kind, scope, deleted, id, start);
             CREATE TABLE IF NOT EXISTS record_identifiers (
                 kind TEXT NOT NULL, id TEXT NOT NULL, identifier TEXT NOT NULL,
                 role TEXT NOT NULL, group_chat INTEGER NOT NULL,

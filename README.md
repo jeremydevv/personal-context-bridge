@@ -135,3 +135,10 @@ or cancelled across chats; uncertain delivery is never automatically retried.
 A Mac that is off cannot create an item or guarantee an on-time alert. See
 [Mac queued writes setup](docs/SETUP.md#native-calendar-and-reminders-writes-through-a-mac)
 for tools, native alarm behavior, and rollout requirements.
+
+### Messages-to-Contacts suggestions
+
+An optional local command extracts narrow birthday and Home/Work address suggestions
+into a separate encrypted ledger for human review. It has no Contacts writer,
+automatic scan, or external inference. See [proposal-only pipeline](docs/MESSAGE-CONTACT-PROPOSALS.md)
+for explicit bounded scans, evidence inspection and limitations.

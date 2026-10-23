@@ -50,3 +50,17 @@ Ambiguous values require semantic review. `account_calls` counts all planning,
 answering and failed attempts with cached-input tokens retained inside total
 input. Missing failed-call usage makes cost incomplete; it never becomes a
 zero-cost success. Keep generation, query and evaluation costs separate.
+
+## Sampled Health statistics
+
+`health_projection.sampled_health_summary(items)` presents each existing
+adapter-marked statistics object as one exact JSON fact, bound to its own original
+index. It makes no inference call, rounds no values, removes no fields, and
+performs no cross-date/device aggregation. All groups survive even when there are
+more than sixteen. Non-statistic records require original reads and are counted
+explicitly. This helper does not verify upstream calculations, deduplicate
+samples, diagnose conditions, or establish phone-upload freshness.
+
+Literal metadata quotes are checked against individual values, including nested
+values, rather than serialized joins or object keys. Authentic literal text still
+requires a separate semantic-support assessment.

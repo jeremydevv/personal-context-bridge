@@ -68,12 +68,14 @@ class DriveTests(unittest.TestCase):
         with self.assertRaises(ValueError):drive.text('program.exe')
 
     def test_process_errors_redacted(self):
-        drive=Drive()
-        with patch.object(drive,'_require_config'),patch('personal_context.icloud_drive.subprocess.Popen') as p:
-            p.return_value.stdout.read.return_value=b''
-            p.return_value.wait.return_value=1
-            with self.assertRaisesRegex(DriveError,'authentication or provider') as err:drive._run(['lsjson','icloud:'])
-            self.assertNotIn('secret',str(err.exception))
+        with tempfile.TemporaryDirectory() as d:
+            drive=Drive(root=Path(d))
+            with patch.object(drive,'_require_config'),patch('personal_context.icloud_drive.subprocess.Popen') as p:
+                p.return_value.stdout.read.return_value=b''
+                p.return_value.wait.return_value=1
+                with self.assertRaisesRegex(DriveError,'authentication or provider') as err:drive._run(['lsjson','icloud:'])
+                self.assertNotIn('secret',str(err.exception))
+
 
 class ProcessBoundaryTests(unittest.TestCase):
     def test_actual_process_output_cap_timeout_and_error_redaction(self):

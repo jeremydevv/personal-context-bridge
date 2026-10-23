@@ -1,144 +1,190 @@
-# Personal Context Bridge
+<p align="center">
+  <img src="docs/assets/banners/03-constellation.png" alt="Personal Context Bridge — Your context, connected. A cheerful star connects notes, calendars and messages. Made by Jeremy." width="100%">
+</p>
 
-A self-hosted MCP bridge for your own Apple, Canvas, Health, travel, and Obsidian
-context. Search encrypted archives from an MCP client, check sync freshness, and
-retrieve bounded records. Each person supplies their own accounts and devices.
+<h1 align="center">Personal Context Bridge</h1>
 
-Optional [Instagram Saved-video search and analysis](docs/INSTAGRAM-SAVED.md)
-uses a Saved-only URL collector, separate anonymous downloads, local speech/OCR,
-encrypted media storage and timestamped image tools. It is disabled by default.
+<p align="center">
+  A little bridge between your digital life and your AI.<br>
+  Self-hosted MCP tools for your own encrypted personal context.<br>
+  <a href="https://github.com/jeremydevv">Made by Jeremy</a> ✦
+</p>
 
-Optional [Apple Voice Memos](docs/VOICE-MEMOS.md) adds full native/local transcripts,
-encrypted audio, shared subscription-backed titles/summaries, and local hybrid
-search. Collection and advanced processing are opt-in.
+<p align="center">
+  <a href="https://github.com/jeremydevv/personal-context-bridge/actions/workflows/ci.yml"><img src="https://github.com/jeremydevv/personal-context-bridge/actions/workflows/ci.yml/badge.svg?branch=development" alt="Public source validation"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.11%2B-355cc9" alt="Python 3.11 or newer"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/bridge-MIT-71834b" alt="Bridge code: MIT license"></a>
+  <a href="NOTICE"><img src="https://img.shields.io/badge/adapted_components-Apache--2.0-71834b" alt="Adapted components: Apache-2.0"></a>
+</p>
 
-This repository contains reusable code and fictional tests. It ships no personal
-archive, account credentials, installed app IDs, or maintainer deployment history.
+<p align="center">
+  <a href="#quickstart">Try the demo</a> ·
+  <a href="#pick-your-sources">Connect a source</a> ·
+  <a href="docs/TOOLS.md">Every MCP tool</a> ·
+  <a href="docs/PRIVACY.md">Privacy</a> ·
+  <a href="CONTRIBUTING.md">Contribute</a>
+</p>
 
-## Try it with fictional data
+Your notes, calendar, messages and saved ideas already tell a story. This project
+helps an MCP client find the relevant pieces, read the original evidence, and
+check when each source was last collected.
 
-Use Python 3.11+ on Linux for the archive server. With [uv](https://docs.astral.sh/uv/):
+I’m building it to make personal context useful across conversations, with a
+private archive you run yourself. Bring your own accounts, devices and MCP client;
+the repository contains reusable code, templates and fictional examples.
+
+## What it does
+
+- **Find the original.** Search records and retrieve bounded text, attachments,
+  transcript passages, PDF pages or video frames where supported.
+- **Connect your own sources.** Choose Apple apps, Canvas, Health, travel,
+  Obsidian, Saved videos and optional live iCloud Drive access.
+- **Keep an encrypted archive.** SQLCipher protects databases; AES-GCM protects
+  binary attachments. Keys and runtime state stay outside the checkout.
+- **Check freshness.** Source timestamps distinguish archived information from
+  current device state. Archived records remain readable while collectors sleep.
+- **Choose optional actions.** Native Calendar/Reminders editing, Mail sending
+  and Obsidian writes need their own configuration and client approval policy.
+
+## Quickstart
+
+Start on **Linux with Python 3.11+**, Git and [uv](https://docs.astral.sh/uv/).
+No account connection is needed for this fictional demo.
 
 ```sh
 git clone https://github.com/jeremydevv/personal-context-bridge.git
 cd personal-context-bridge
 uv venv --python 3.11
 uv pip install -e '.[mcp,messages,images]'
-.venv/bin/personal-context-setup --demo --iphone
+.venv/bin/personal-context-setup --demo
 ```
 
-The setup command creates a random 32-byte key, encrypted databases, private source
-templates, upload credentials, and `mcp.json` under
-`~/.local/share/personal-context-bridge/runtime`. It refuses to overwrite an
-existing installation or put runtime state inside a source checkout. `--iphone`
-is optional; it creates empty Health/travel archives, not fictional health data.
+1. Open the generated private `mcp.json` under
+   `~/.local/share/personal-context-bridge/runtime`.
+2. Copy its `mcpServers` entries into your MCP client configuration and restart
+   the client. The generated paths point to your own interpreter and archive.
+3. Ask: **“Search my personal context for fictional.”** Expect three clearly
+   fictional Calendar, Reminder and Notes records.
 
-Copy the generated `mcpServers` entries from that private `mcp.json` into your
-MCP client's configuration. The file already contains absolute paths to this
-installation's Python interpreter and private archive. Restart the client and
-ask it to search for **fictional**. The demo returns three clearly fictional
-Calendar, Reminder, and Notes records. Use a separate `--root` when setting up
-real collection, so demo records do not mix with your context.
+Setup creates a random 32-byte key and encrypted databases, refuses to overwrite
+an installation, and keeps runtime state outside source. Use a separate
+`--root /absolute/private/real-context` without `--demo` for real collection.
+Add `--iphone` if you want empty Health/travel archives and receiver credentials.
 
-For pip, replace the two uv commands with `python3 -m venv .venv` and
-`.venv/bin/pip install -e '.[mcp,messages,images]'`. On Ubuntu, install the matching
-`python3-venv` package if venv creation is unavailable. There is no published PyPI
-package yet; install from this repository.
+<details>
+<summary>Using pip, or choosing a different platform?</summary>
 
-## Connections
+Replace the two uv commands with `python3 -m venv .venv` and
+`.venv/bin/pip install -e '.[mcp,messages,images]'`. Ubuntu may need the matching
+`python3-venv` package. Install from source; there is no published PyPI package.
 
-| Connection | Data available | Authentication / permission |
-|---|---|---|
-| Apple Calendar | Event titles, notes, timing, participants and source details | macOS Calendar permission through Apple PIM; SSH key for archive transfer |
-| Apple Reminders | Lists, tasks, notes, dates and completion | macOS Reminders permission through Apple PIM; SSH key for transfer |
-| Apple Contacts | Names, emails, phones, addresses and other contact fields | macOS Automation access to Contacts; SSH key for transfer |
-| Apple Mail | Mailbox inventory, headers, recipient details and available bodies | Local Mail index via patched Apple PIM; Full Disk Access; SSH key for transfer |
-| Apple Messages | Messages, participants, attachment metadata and optionally file bytes | Full Disk Access to the local Messages database/files; SSH key for transfer |
-| Apple Notes | Titles, available bodies, folders and timestamps | macOS Automation access to Notes; SSH key for transfer |
-| Apple Voice Memos | Full transcripts, source titles/dates, generated summaries and local semantic passages | Mac local Voice Memos/iCloud cache read access; existing SSH transport; shared ChatGPT-plan OAuth for summaries |
-| Canvas | Student courses, assignments, submissions/grades, announcements, files, Inbox conversations, ordered modules/items, full accessible pages/front pages, syllabuses, own feedback/history/rubrics, discussions/replies, planner/to-do, grading context, sections/people, groups, calendars and resource inventories; optional PDF/DOCX text | User-provided Canvas API bearer token in a private local file |
-| Apple Health | Selected HealthKit samples, workouts/routes, activity summaries and aggregates | HealthKit read permission in the PulsHealth iPhone app; bearer token for receiver uploads |
-| OwnTracks | Location coordinates, timestamps and travel event metadata | iOS location permission; HTTP Basic authentication with a private generated password |
-| Google Maps Timeline | Visits, activities and paths from an on-phone JSON export | User-provided export file; no live Google OAuth connection |
-| Obsidian | Allowlisted vault files; optional revision-checked Markdown edits | Local filesystem/encrypted mount access; iCloud authentication belongs to your own sync setup |
-| MCP client | Tool-selected records from your archives | Local stdio subprocess; remote access requires your own authenticated transport |
+Apple collection requires macOS. Linux is the tested archive/query host.
+A Mac hosting the archive needs a native SQLCipher build and matching `sqlcipher3`
+binding. Windows is unsupported by the current Unix lock/mount code.
+Optional PDF support needs Poppler; video processing needs FFmpeg and `.[videos]`;
+local Voice Memo processing needs `.[voice]`.
 
-## Connect your sources
+</details>
 
-Follow [setup](docs/SETUP.md) for Mac-to-Linux collection, Canvas, iPhone receivers,
-Timeline imports, Obsidian, scheduling, and backups. [MCP configuration examples](examples/mcp.example.json)
-show the separate source servers. For ChatGPT web, follow the
-[private tunnel guide](docs/CHATGPT.md). The archive works while collection devices are
-asleep; check timestamps before assuming current data.
+## Pick your sources
 
-The Apple collectors need macOS. The archive/query service and iPhone receivers
-are tested on Linux. On macOS, the `mcp` extra uses `sqlcipher3`, requiring a
-working native SQLCipher build (for example Homebrew SQLCipher plus matching
-compiler flags). Windows is not supported by the current Unix lock/mount code.
-Image previews require the `images` extra and PDF text extraction requires
-`pdftotext` (`poppler-utils` on Ubuntu). Locked Notes, absent Messages attachments,
-and image-only PDFs may have no readable content.
+Each resource has its own README with **setup, sync commands, permissions,
+verification and links to every individual tool README**. Enable only the sources
+you want. Collection and scheduling are configured separately from MCP reads.
 
-## Privacy and writes
+| Resource | What you can retrieve | Setup and sync |
+| --- | --- | --- |
+| Personal context | Cross-source search, records, timelines and archive status | [README](docs/resources/context/README.md) |
+| Apple Calendar | Events, timing, notes and optional native edits | [README](docs/resources/calendar/README.md) |
+| Apple Reminders | Lists, tasks, dates, completion and optional native edits | [README](docs/resources/reminder/README.md) |
+| Apple Contacts | Contact fields and bounded correspondence links | [README](docs/resources/contact/README.md) |
+| Apple Mail | Selected mailboxes, headers and available bodies | [README](docs/resources/mail/README.md) |
+| Apple Messages | Conversations and available attachment originals | [README](docs/resources/message/README.md) |
+| Apple Notes | Folders, titles, readable bodies and dates | [README](docs/resources/note/README.md) |
+| Apple Voice Memos | Complete transcripts, encrypted audio and local hybrid search | [README](docs/resources/voice_memo/README.md) |
+| Canvas | Courses, assignments, modules, pages, accessible resources and PDF evidence | [README](docs/resources/canvas/README.md) |
+| Apple Health | Selected samples, aggregates, workouts and activity summaries | [README](docs/resources/health/README.md) |
+| Travel and Timeline | OwnTracks observations and imported Google Maps Timeline history | [README](docs/resources/travel/README.md) |
+| Remembered places | Evidence-linked place names, descriptions and sampled visits | [README](docs/resources/places/README.md) |
+| Obsidian | Allowlisted vault notes and optional revision-checked edits | [README](docs/resources/obsidian/README.md) |
+| Instagram Saved videos | Saved-only video URLs, local speech/OCR and timestamped frames | [README](docs/resources/instagram/README.md) |
+| iCloud Drive | Live read-only folder listings, filename search and bounded file reads | [README](docs/resources/icloud-drive/README.md) |
 
-For opt-in native Calendar and Reminders editing, see
-[direct MCP editing](docs/APPLE-PIM-EDITING.md): exact-ID updates/deletes,
-calendar/list selection, alerts, driving estimates, real Urgent alarms and subtasks.
+**Looking for a particular call?** Open the [MCP tool directory](docs/TOOLS.md).
+Every tool name links to its own README, including optional refresh and write tools.
+A tool appearing in the source does not mean your account is connected or your
+client has refreshed its tool catalog.
 
-`set_apple_calendar_travel_time` edits the native travel duration without routing
-or phone-location access. Supply a live inspected ID, occurrence start, revision,
-and `duration_minutes` (0–10080 whole minutes; 0 clears). The initial adapter
-supports timed, nonrecurring, non-detached events without attendees, with this-event
-scope only. It verifies persisted seconds and preserves all other inspected
-fields. It does not enable dynamic travel updates or guarantee notification delivery.
+## How the pieces fit
 
-Archives use SQLCipher; binary attachments use authenticated AES-GCM encryption.
-Keys and upload credentials are separate files created with mode 0600 in a
-private directory. Keep a secure recovery copy of the key: losing it loses access
-to your archive. Read [privacy and retention](docs/PRIVACY.md) before using real data.
+```mermaid
+flowchart LR
+    A[Your Mac and selected apps] -->|SSH collection| D[Encrypted private archives]
+    B[Your phone and selected uploads] -->|Authenticated private route| D
+    C[Canvas and selected imports] --> D
+    D --> E[MCP tools]
+    V[Allowlisted Obsidian vaults] --> E
+    I[Optional live iCloud Drive] --> E
+    E --> F[Your MCP client and chosen model]
+```
 
-The default MCP surfaces retrieve data. Refresh requests and Mail sending are
-opt-in. Obsidian writes require explicit server configuration and revision checks.
-Mail sending uses a separately configured sender/account and a worker with a
-five-minute cancellation window. Tool annotations and descriptions do not enforce
-human approval; configure your client to require approval for write operations.
+Most tools read collected snapshots. Obsidian reads your configured vault files;
+iCloud Drive performs live requests and does not create an offline mirror.
+An optional background worker can produce summaries, keeping generated text
+separate from source records. Confirm important details against the original.
 
-Local storage does not mean the AI provider never sees your data: tool results
-are sent to the client/model you connect. Do not expose the receiver ports directly
-to the public internet. Supply an authenticated, encrypted network path for phone
-uploads; the receiver processes deliberately bind to loopback.
+For local clients, use the generated private `mcp.json`. For ChatGPT web, follow
+[the authenticated tunnel guide](docs/CHATGPT.md) using your own installation.
+The bridge is software you host, with device permissions and source authentication
+you control.
 
-## Development
+## Privacy and actions
+
+Read [privacy and retention](docs/PRIVACY.md) before connecting real data. Protect
+a separate recovery copy of the encryption key; losing it loses archive access.
+Keep credentials, sessions, filled configuration, source exports and archives
+outside the repository. Phone receivers bind to loopback and need an authenticated,
+encrypted network route.
+
+**Your chosen AI provider can see tool results sent to it.** Encrypted local
+storage does not make a remote model private or make generated claims accurate.
+Missing device permissions, locked Notes, unhydrated audio and absent attachments
+can limit collection.
+
+Optional [Calendar/Reminders editing](docs/APPLE-PIM-EDITING.md) uses an authorized
+Mac and a private queue. `queued` means accepted; native completion needs a matching
+receipt and readback. Uncertain delivery is never automatically retried. A sleeping
+Mac cannot guarantee an on-time alert. Mail sending has a separately configured
+sender/worker and a five-minute cancellation window. Obsidian edits require
+explicit enablement and current revisions. Configure client approval for writes;
+tool annotations alone do not enforce approval.
+
+[Messages-to-Contacts suggestions](docs/MESSAGE-CONTACT-PROPOSALS.md) are a separate,
+manual local proposal ledger. They do not write Contacts or start background scans.
+
+## Build with me
+
+Small fixes, clear guides and fictional regression cases are welcome. Start with
+[CONTRIBUTING.md](CONTRIBUTING.md), the [setup guide](docs/SETUP.md), or the
+[implementation notes](docs/IMPLEMENTATION.md).
 
 ```sh
 uv pip install -e '.[mcp,messages,images,dev]'
 .venv/bin/python -m unittest discover -s tests
 .venv/bin/python -m unittest discover -s iphone/tests
 .venv/bin/python iphone/tests/upstream_smoke_test.py
-.venv/bin/python scripts/check_release.py
 .venv/bin/python -m build
+.venv/bin/python scripts/check_release.py --history
 ```
 
-The Health HTTP smoke test uses synthetic upstream fixtures and temporary encrypted
-storage. Device permissions and live account access are user-specific and are not
-exercised by CI. See [CONTRIBUTING.md](CONTRIBUTING.md).
+CI also runs Saved-video regressions with FFmpeg and the `videos` extra.
+Device permissions and real account access need separate live verification.
+
+## Credits
+
+Created by [Jeremy](https://github.com/jeremydevv). Banner art was generated with
+Imagegen; explore the [five banner directions and prompts](docs/BRANDING.md).
 
 Original bridge code is [MIT licensed](LICENSE). Adapted PulsHealth components
-retain [Apache-2.0 licensing](third_party/pulshealth/LICENSE); see [NOTICE](NOTICE).
-
-### Native Calendar and Reminders creation
-
-Optional chat tools queue approved creates on Ubuntu and deliver them to the Mac
-when it is available. They use existing native calendars/lists and require
-one-time macOS permissions. Writes are disabled by default. Jobs can be checked
-or cancelled across chats; uncertain delivery is never automatically retried.
-A Mac that is off cannot create an item or guarantee an on-time alert. See
-[Mac queued writes setup](docs/SETUP.md#native-calendar-and-reminders-writes-through-a-mac)
-for tools, native alarm behavior, and rollout requirements.
-
-### Messages-to-Contacts suggestions
-
-An optional local command recognizes conversational birthday and address facts and stores suggestions
-into a separate encrypted ledger for human review. It has no Contacts writer,
-automatic scan, or external inference. See [proposal-only pipeline](docs/MESSAGE-CONTACT-PROPOSALS.md)
-for explicit bounded scans, evidence inspection and limitations.
+retain [Apache-2.0 licensing](third_party/pulshealth/LICENSE). Upstream notices and
+other adapted-component licenses are listed in [NOTICE](NOTICE).

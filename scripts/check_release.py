@@ -14,6 +14,7 @@ import sys
 import tarfile
 import zipfile
 import argparse
+import hashlib
 
 ROOT = Path(__file__).resolve().parents[1]
 BAD_PARTS = {
@@ -82,12 +83,25 @@ PATTERNS = [
         r"\bsessionid\s*[:=]\s*[\"\x27]?[A-Za-z0-9%:_-]{24,}",
     )
 ]
+# Reviewed generated repository artwork; exact hashes keep binary exemptions narrow.
+PUBLIC_ARTWORK = {
+    "docs/assets/banners/01-paper-archive.png": "ed6baf1b8a3c8c83104b90a3e3e371d2778c8362892d662fbff8a314d6f66608",
+    "docs/assets/banners/02-glass-bridge.png": "fadbc2f82affbcb8c03e4ed85fe063ee6b27640e130391c7ccfb29809dad8079",
+    "docs/assets/banners/03-constellation.png": "302f6dc2c2aae2c29d9bb97e6dd918502c203a895ba59eef81bb51909f33d9ee",
+    "docs/assets/banners/04-field-guide.png": "a778de9205a90e377676caf15bd4092845f085f4b6bd26a40732a6f5de9b86b1",
+    "docs/assets/banners/05-blueprint.png": "ca1c891253a820996264d30fd2175b0c2fccf2f60cd0d95cb744d4e2c32879df",
+}
+
 MARKERS = [
     x for x in os.environ.get("PERSONAL_CONTEXT_PRIVATE_MARKERS", "").splitlines() if x
 ]
 
 
 def issues(name, data):
+    if name in PUBLIC_ARTWORK:
+        if hashlib.sha256(data).hexdigest() == PUBLIC_ARTWORK[name]:
+            return []
+        return [name + ": artwork changed; binary review required"]
     path = Path(name)
     findings = []
     if (

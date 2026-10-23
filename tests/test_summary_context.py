@@ -31,6 +31,38 @@ class SummaryContextTests(unittest.TestCase):
   self.assertEqual(value['deduplicated_statistics_objects'],1)
   self.assertEqual(value['source_catalog'][1]['metadata'],self.items[1]['metadata'])
   self.assertIn('non-statistic',' '.join(value['summary']['uncertainties']))
+ def test_coalescing_moves_only_exact_duplicate_metadata_to_original(self):
+  from personal_context.summary_context import coalesce_catalog_metadata
+  from personal_context.evidence_contract import evidence_catalog,resolve_evidence
+  catalog=evidence_catalog(self.items,self.refs)
+  reads=resolve_evidence([catalog[1]['evidence_id']],self.items,self.refs)
+  compact,count=coalesce_catalog_metadata(catalog,reads)
+  self.assertEqual(count,1)
+  self.assertEqual(compact[1]['metadata_in_original_evidence'],catalog[1]['evidence_id'])
+  self.assertNotIn('metadata',compact[1])
+  self.assertEqual(compact[0],catalog[0])
+  self.assertEqual(reads[0]['evidence']['metadata'],self.items[1]['metadata'])
+  self.assertIn('metadata',catalog[1])
+  reads[0]['evidence']['metadata']['attempt']=False
+  different,count=coalesce_catalog_metadata(catalog,reads)
+  self.assertEqual(count,0);self.assertIn('metadata',different[1])
+ def test_coalescing_cannot_hide_unknown_or_unreturned_metadata(self):
+  from personal_context.summary_context import coalesce_catalog_metadata
+  from personal_context.evidence_contract import evidence_catalog
+  catalog=evidence_catalog(self.items,self.refs)
+  compact,count=coalesce_catalog_metadata(catalog,[])
+  self.assertEqual(compact,catalog);self.assertEqual(count,0)
+  compact,count=coalesce_catalog_metadata(catalog,[dict(evidence_id='ev1_unknown',evidence=self.items[1])])
+  self.assertEqual(compact,catalog);self.assertEqual(count,0)
+ def test_budget_coalescing_retains_original_body_and_all_typed_metadata(self):
+  self.items[1]['metadata']['large']='x'*6000
+  base=self.prepare();limit=len(json.dumps(base,ensure_ascii=False,sort_keys=True,separators=(',',':')))+1800
+  packed=self.prepare(question='Pencil',limit=1,max_characters=limit)
+  self.assertEqual(len(packed['original_selection']['items']),1)
+  read=packed['original_selection']['items'][0]
+  self.assertEqual(read['evidence']['metadata'],self.items[1]['metadata'])
+  self.assertEqual(packed['source_catalog'][1]['metadata_in_original_evidence'],read['evidence_id'])
+  self.assertLessEqual(len(json.dumps(packed,ensure_ascii=False,sort_keys=True,separators=(',',':'))),limit)
  def test_budget_does_not_silently_drop_catalog_or_claims(self):
   with self.assertRaisesRegex(ValueError,'paged_reads'):
    self.prepare(max_characters=100)

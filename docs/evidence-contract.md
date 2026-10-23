@@ -90,3 +90,12 @@ must occur in that exact string field. Number, boolean and null quotes must equa
 the complete canonical scalar value, so explicit null cannot substitute for an
 absent field. Citations without a pointer retain the legacy individual-value
 check. Field-level authenticity still does not establish semantic entailment.
+
+When a prepared context exceeds its whole-response budget, an exact duplicate
+catalog `metadata` object may be replaced by
+`metadata_in_original_evidence: EVIDENCE_ID`. Its complete typed object remains
+beside that fetched original in the same response. This coalescing requires the
+same evidence ID, original index, and canonical typed value; `false`, `0`, null,
+and missing remain distinct. Source records are never modified. If a fetched
+original is removed to fit the budget, its catalog metadata is restored. If the
+base summary/catalog cannot fit, paged reads are still required.

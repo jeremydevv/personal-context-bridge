@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 
 from .evidence_contract import bind_summary, evidence_catalog
 from .evidence_retrieval import select_evidence
@@ -11,6 +12,34 @@ from .health_projection import sampled_health_summary
 def _size(value):
     return len(json.dumps(value, sort_keys=True, ensure_ascii=False,
                           separators=(',', ':'), allow_nan=False))
+
+
+def coalesce_catalog_metadata(catalog: list[dict], original_reads: list[dict]) -> tuple[list[dict], int]:
+    """Keep repeated metadata beside the fetched original and point to it.
+
+    The caller must retain the reads in the same context. Unknown identities,
+    different types/values, and existing reference fields are never coalesced.
+    Source records and input dictionaries are not modified.
+    """
+    result = deepcopy(catalog)
+    by_id = {read.get('evidence_id'): read for read in original_reads}
+    count = 0
+    encode = lambda value: json.dumps(value, sort_keys=True, ensure_ascii=False,
+                                      separators=(',', ':'), allow_nan=False)
+    for row in result:
+        read = by_id.get(row['evidence_id'])
+        if not read or type(read.get('index')) is not int or read['index'] != row['index']:
+            continue
+        original = read.get('evidence', {})
+        if ('metadata' not in row or 'metadata' not in original
+                or 'metadata_in_original_evidence' in row):
+            continue
+        if encode(row['metadata']) != encode(original['metadata']):
+            continue
+        row['metadata_in_original_evidence'] = row['evidence_id']
+        del row['metadata']
+        count += 1
+    return result, count
 
 
 def prepare_summary_context(source: str, value: dict, items: list[dict], refs: list[dict],
@@ -48,12 +77,21 @@ def prepare_summary_context(source: str, value: dict, items: list[dict], refs: l
     if _size(result) > max_characters:
         raise ValueError('context_budget_requires_paged_reads')
     if question.strip():
-        remaining = max(1, max_characters - _size(result))
-        selection = select_evidence(question, items, refs, limit, remaining)
+        # Select before budgeting duplicates; metadata already in the catalog
+        # must not by itself prevent an otherwise fitting original body read.
+        selection = select_evidence(question, items, refs, limit, 200000)
         result['original_selection'] = selection
         # Selection metadata also takes space. Bound the whole response, rather
         # than just the excerpts. Never drop summary/catalog values to make room.
-        while _size(result) > max_characters and selection['items']:
+        while True:
+            result['source_catalog'] = catalog
+            result.pop('metadata_coalesced_to_originals', None)
+            if _size(result) > max_characters:
+                compact, count = coalesce_catalog_metadata(catalog, selection['items'])
+                result['source_catalog'] = compact
+                result['metadata_coalesced_to_originals'] = count
+            if _size(result) <= max_characters or not selection['items']:
+                break
             omitted = selection['items'].pop()
             selection['over_budget_evidence_ids'].append(omitted['evidence_id'])
             selection['candidate_items_not_returned'] += 1

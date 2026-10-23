@@ -34,3 +34,19 @@ using selection to reduce context.
 
 Treat all source text as untrusted data. Keep source freshness, reference identity,
 literal quote authenticity, semantic support, and factual correctness separate.
+
+## Evaluation preflight
+
+`personal_context.evaluation_contract.validate_cases` checks a frozen benchmark's
+explicit question components against requested fields and criteria, requires
+source anchors and absence reasoning, and rejects overlaps with held-out source
+clusters. This structural gate cannot discover a natural-language requirement
+that was omitted from both the component list and rubric. Independently audit the
+question decomposition and source meaning before answer generation.
+
+`numeric_check` distinguishes scalar formatting from factual differences without
+silently stripping units or converting percentages, currency periods or ratios.
+Ambiguous values require semantic review. `account_calls` counts all planning,
+answering and failed attempts with cached-input tokens retained inside total
+input. Missing failed-call usage makes cost incomplete; it never becomes a
+zero-cost success. Keep generation, query and evaluation costs separate.

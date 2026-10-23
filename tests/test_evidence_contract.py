@@ -77,6 +77,21 @@ class EvidenceContractTests(unittest.TestCase):
         self.assertFalse(bad['literal_quotes_verified'])
         self.assertEqual(bad['errors'][0]['code'], 'quote_not_in_evidence')
 
+    def test_metadata_quotes_cannot_join_fields_or_json_encoding(self):
+        self.items[0]['metadata'] = {'a': 'alpha', 'b': 'beta',
+                                     'nested': {'name': 'a "quoted" name'},
+                                     'values': [0, False, None]}
+        handle = self.api.evidence_catalog(self.items, self.refs)[0]['evidence_id']
+        for quote in ['alpha","b":"beta', 'nested', 'false,null']:
+            with self.subTest(quote=quote):
+                result = self.api.check_citations([dict(evidence_id=handle, quote=quote)],
+                                                  self.items, self.refs)
+                self.assertFalse(result['literal_quotes_verified'])
+        for quote in ['alpha', 'a "quoted" name', 'false', 'null']:
+            with self.subTest(quote=quote):
+                self.assertTrue(self.api.check_citations([dict(evidence_id=handle, quote=quote)],
+                                                        self.items, self.refs)['literal_quotes_verified'])
+
     def test_empty_unknown_duplicate_and_oversize_reads_fail_explicitly(self):
         handle = self.api.evidence_catalog(self.items, self.refs)[0]['evidence_id']
         for handles, error in [([], 'empty'), (['ev1_forged'], 'unknown'),

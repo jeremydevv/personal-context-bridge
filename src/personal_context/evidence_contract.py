@@ -84,6 +84,18 @@ def resolve_evidence(evidence_ids: list[str], items: list[dict], refs: list[dict
     return result
 
 
+def _metadata_literals(value):
+    """Yield individual source values, never serialized joins or object keys."""
+    if isinstance(value, dict):
+        for child in value.values():
+            yield from _metadata_literals(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _metadata_literals(child)
+    else:
+        yield value if isinstance(value, str) else _canonical(value)
+
+
 def check_citations(citations: list[dict], items: list[dict], refs: list[dict]) -> dict:
     """Check identity and literal quotes, explicitly leaving entailment unchecked.
 
@@ -111,8 +123,8 @@ def check_citations(citations: list[dict], items: list[dict], refs: list[dict]) 
         item = items[row['index']]
         # Do not allow a quote to cross body/metadata or two metadata fields.
         text = item.get('text') or ''
-        metadata = _canonical(item.get('metadata', {}))
-        if quote not in text and quote not in metadata:
+        metadata = _metadata_literals(item.get('metadata', {}))
+        if quote not in text and not any(quote in value for value in metadata):
             errors.append({'position': position, 'code': 'quote_not_in_evidence'})
     return {'references_valid': references_valid,
             'literal_quotes_verified': bool(citations) and not errors,

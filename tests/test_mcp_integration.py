@@ -81,7 +81,9 @@ class McpIntegrationTests(unittest.IsolatedAsyncioTestCase):
                                       "get_canvas_record", "upcoming_canvas_assignments", "canvas_modules", "canvas_module_items", "list_canvas_records", "canvas_summary_status", "canvas_search_explanations", "get_canvas_explanation",
                                       "read_canvas_file_text", "canvas_pdf_info", "view_canvas_pdf_page", "search_apple_voice_memo", "get_apple_voice_memo_record",
                                       "read_apple_voice_memo_transcript", "apple_voice_memo_timeline",
-                                      "apple_voice_memo_status"}, names)
+                                      "apple_voice_memo_status", "icloud_drive_status", "list_icloud_drive",
+                                      "search_icloud_drive", "icloud_drive_file_info",
+                                      "read_icloud_drive_text", "read_icloud_drive_chunk"}, names)
                     voice = await session.call_tool("get_personal_record", {
                         "kind": "voice_memo", "record_id": "voice-demo"})
                     self.assertFalse(voice.isError)

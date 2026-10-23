@@ -169,6 +169,8 @@ def run():
     from .location_mcp import register as register_location
     register_location(mcp)
     register_canvas_tools(mcp)
+    from .icloud_drive_mcp import register as register_icloud_drive
+    register_icloud_drive(mcp)
     if os.environ.get("PERSONAL_CONTEXT_SAVED_VIDEO_ENABLED") == "1":
         from .saved_video_mcp import register as register_saved_videos
         register_saved_videos(mcp)

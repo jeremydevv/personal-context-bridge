@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="850" viewBox="0 0 720 850" role="img" aria-labelledby="title desc">
+<title id="title">How Personal Context Bridge connects your sources to your AI</title>
+<desc id="desc">Selected Mac apps, phone uploads, Canvas and imports feed encrypted archives. MCP tools read these archives and also access allowlisted Obsidian vaults and optional live iCloud Drive. Your chosen MCP client and model receive tool results.</desc>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10" fill="#795f19"/></marker></defs>
+<rect width="720" height="850" rx="24" fill="#fffdf5"/>
+<g font-family="Arial, Helvetica, sans-serif" text-anchor="middle" fill="#29251b">
+<rect x="30" y="25" width="660" height="168" rx="18" fill="#fff5ce" stroke="#b99a43" stroke-width="2"/>
+<text x="360" y="64" font-size="27" font-weight="700">Your selected sources</text>
+<text x="360" y="101" font-size="22">Mac apps · phone uploads</text>
+<text x="360" y="132" font-size="22">Canvas · selected imports</text>
+<text x="360" y="163" font-size="22">Collection and permissions configured per source</text>
+<path d="M360 198 V268" stroke="#795f19" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="180" y="206" width="360" height="28" fill="#fffdf5"/><text x="360" y="227" font-size="19">Collect and transfer</text>
+<rect x="30" y="280" width="660" height="110" rx="18" fill="#fff5ce" stroke="#b99a43" stroke-width="2"/>
+<text x="360" y="319" font-size="27" font-weight="700">Encrypted private archives</text>
+<text x="360" y="356" font-size="22">Original records and available attachments</text>
+<path d="M360 395 V457" stroke="#795f19" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="180" y="403" width="360" height="28" fill="#fffdf5"/><text x="360" y="424" font-size="19">Read archived evidence</text>
+<rect x="30" y="470" width="660" height="174" rx="18" fill="#fff5ce" stroke="#b99a43" stroke-width="2"/>
+<text x="360" y="509" font-size="27" font-weight="700">MCP tools</text>
+<text x="360" y="546" font-size="22">Also read live from:</text>
+<text x="360" y="577" font-size="22">allowlisted Obsidian vaults</text>
+<text x="360" y="608" font-size="22">optional authorized iCloud Drive</text>
+<path d="M360 649 V714" stroke="#795f19" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="180" y="657" width="360" height="28" fill="#fffdf5"/><text x="360" y="678" font-size="19">Return selected tool results</text>
+<rect x="30" y="727" width="660" height="99" rx="18" fill="#fff5ce" stroke="#b99a43" stroke-width="2"/>
+<text x="360" y="766" font-size="27" font-weight="700">Your MCP client and chosen model</text>
+<text x="360" y="803" font-size="22">Search, retrieve and check freshness</text>
+</g></svg>

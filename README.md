@@ -134,16 +134,7 @@ client has refreshed its tool catalog.
 
 ## How the pieces fit
 
-```mermaid
-flowchart LR
-    A[Your Mac and selected apps] -->|SSH collection| D[Encrypted private archives]
-    B[Your phone and selected uploads] -->|Authenticated private route| D
-    C[Canvas and selected imports] --> D
-    D --> E[MCP tools]
-    V[Allowlisted Obsidian vaults] --> E
-    I[Optional live iCloud Drive] --> E
-    E --> F[Your MCP client and chosen model]
-```
+![Selected sources feed encrypted private archives. MCP tools read archived evidence plus authorized live Obsidian and iCloud Drive sources, then return results to your MCP client and chosen model.](docs/assets/architecture.svg)
 
 Most tools read collected snapshots. Obsidian reads your configured vault files;
 iCloud Drive uses an authorized, reachable Mac and does not create an offline mirror.

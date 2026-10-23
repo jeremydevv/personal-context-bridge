@@ -92,6 +92,15 @@ class EvidenceContractTests(unittest.TestCase):
                 self.assertTrue(self.api.check_citations([dict(evidence_id=handle, quote=quote)],
                                                         self.items, self.refs)['literal_quotes_verified'])
 
+    def test_original_title_and_timestamp_are_literal_source_values(self):
+        self.items[0].update(title='Fixture title only', at='2026-01-02T10:00:00Z')
+        handle=self.api.evidence_catalog(self.items,self.refs)[0]['evidence_id']
+        for quote in ['Fixture title only','2026-01-02T10:00:00Z']:
+            self.assertTrue(self.api.check_citations([dict(evidence_id=handle,quote=quote)],
+                                                    self.items,self.refs)['literal_quotes_verified'])
+        self.assertFalse(self.api.check_citations([dict(evidence_id=handle,quote='only2026-01')],
+                                                 self.items,self.refs)['literal_quotes_verified'])
+
     def test_empty_unknown_duplicate_and_oversize_reads_fail_explicitly(self):
         handle = self.api.evidence_catalog(self.items, self.refs)[0]['evidence_id']
         for handles, error in [([], 'empty'), (['ev1_forged'], 'unknown'),

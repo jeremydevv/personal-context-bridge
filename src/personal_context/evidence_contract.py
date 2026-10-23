@@ -121,10 +121,10 @@ def check_citations(citations: list[dict], items: list[dict], refs: list[dict]) 
             errors.append({'position': position, 'code': 'missing_quote'})
             continue
         item = items[row['index']]
-        # Do not allow a quote to cross body/metadata or two metadata fields.
-        text = item.get('text') or ''
-        metadata = _metadata_literals(item.get('metadata', {}))
-        if quote not in text and not any(quote in value for value in metadata):
+        # Check individual original values; never concatenate source fields.
+        values = [item.get(key) for key in ('text', 'title', 'at', 'end')]
+        values.extend(_metadata_literals(item.get('metadata', {})))
+        if not any(isinstance(value, str) and quote in value for value in values):
             errors.append({'position': position, 'code': 'quote_not_in_evidence'})
     return {'references_valid': references_valid,
             'literal_quotes_verified': bool(citations) and not errors,

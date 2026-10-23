@@ -61,6 +61,7 @@ more than sixteen. Non-statistic records require original reads and are counted
 explicitly. This helper does not verify upstream calculations, deduplicate
 samples, diagnose conditions, or establish phone-upload freshness.
 
-Literal metadata quotes are checked against individual values, including nested
-values, rather than serialized joins or object keys. Authentic literal text still
+Literal quotes are checked against individual original body, title, timestamp,
+and metadata values (including nested values), rather than serialized joins or
+object keys. Authentic literal text still
 requires a separate semantic-support assessment.

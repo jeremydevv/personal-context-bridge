@@ -124,6 +124,34 @@ class EvidenceContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'length'):
             self.api.evidence_catalog(self.items, self.refs[:1])
 
+    def test_field_path_limits_quote_to_exact_scalar_and_preserves_null(self):
+        handle = self.api.evidence_catalog(self.items, self.refs)[1]['evidence_id']
+        for path, quote in [('/metadata/score', '17'),
+                            ('/metadata/submitted', 'false'),
+                            ('/metadata/attempt', '0'),
+                            ('/metadata/submitted_at', 'null')]:
+            result = self.api.check_citations([dict(evidence_id=handle, quote=quote,
+                                                    field_path=path)], self.items, self.refs)
+            self.assertTrue(result['literal_quotes_verified'])
+            self.assertEqual(result['semantic_support'], 'not_checked')
+        for path, quote in [('/metadata/submitted_at', '17'),
+                            ('/metadata/absent', 'null'),
+                            ('/metadata/score', '7'),
+                            ('/metadata', '17'), ('metadata/score', '17')]:
+            result = self.api.check_citations([dict(evidence_id=handle, quote=quote,
+                                                    field_path=path)], self.items, self.refs)
+            self.assertFalse(result['literal_quotes_verified'], (path, quote))
+
+    def test_field_path_handles_escaped_keys_lists_and_malformed_paths(self):
+        self.items[1]['metadata']['a/b'] = {'~key': [dict(value='blue pencil')]}
+        handle = self.api.evidence_catalog(self.items, self.refs)[1]['evidence_id']
+        good = dict(evidence_id=handle, quote='blue', field_path='/metadata/a~1b/~0key/0/value')
+        self.assertTrue(self.api.check_citations([good], self.items, self.refs)['literal_quotes_verified'])
+        for path in ['/metadata/a~1b/~0key/-1/value', '/metadata/a~1b/~0key/01/value',
+                     '/metadata/a~1b/~0key/9/value', '/metadata/a~2b', [], None]:
+            bad = dict(good, field_path=path)
+            self.assertFalse(self.api.check_citations([bad], self.items, self.refs)['literal_quotes_verified'])
+
     def test_malformed_model_citation_does_not_crash_checker(self):
         result = self.api.check_citations([{'evidence_id': [], 'quote': 'Score: 17.'}],
                                           self.items, self.refs)

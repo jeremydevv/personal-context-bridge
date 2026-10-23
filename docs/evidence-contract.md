@@ -81,3 +81,12 @@ metadata. It may omit original reads, reporting their IDs/counts and incomplete
 coverage. It never trims generated claims or catalog metadata to fit. A base
 context that cannot fit requires existing paged summary/evidence reads. Stable IDs,
 literal authenticity, and an efficient context pack do not prove semantic support.
+
+Citations may include a `field_path` JSON Pointer into the original item, such as
+`/metadata/submission/score` or `/metadata/submitted_at`. A supplied pointer must
+resolve to an existing scalar; object/array containers and malformed paths fail.
+Escaped object keys and array indices follow JSON Pointer syntax. A string quote
+must occur in that exact string field. Number, boolean and null quotes must equal
+the complete canonical scalar value, so explicit null cannot substitute for an
+absent field. Citations without a pointer retain the legacy individual-value
+check. Field-level authenticity still does not establish semantic entailment.

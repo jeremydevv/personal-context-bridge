@@ -96,6 +96,43 @@ def _metadata_literals(value):
         yield value if isinstance(value, str) else _canonical(value)
 
 
+def _pointer_scalar(item, path):
+    """Resolve a source JSON Pointer to one value, never a serialized container."""
+    if not isinstance(path, str) or not path.startswith('/') or len(path) > 2000:
+        raise ValueError('invalid_field_path')
+    tokens = path[1:].split('/')
+    decoded = []
+    for token in tokens:
+        pos = 0
+        while pos < len(token):
+            if token[pos] == '~':
+                if pos + 1 == len(token) or token[pos + 1] not in '01':
+                    raise ValueError('invalid_field_path')
+                pos += 1
+            pos += 1
+        decoded.append(token.replace('~1', '/').replace('~0', '~'))
+    if decoded[0] not in ('text', 'title', 'at', 'end', 'metadata'):
+        raise ValueError('invalid_field_path')
+    value = item
+    for token in decoded:
+        if isinstance(value, dict):
+            if token not in value:
+                raise ValueError('unknown_field_path')
+            value = value[token]
+        elif isinstance(value, list):
+            if not token.isascii() or not token.isdecimal() or str(int(token)) != token:
+                raise ValueError('invalid_field_path')
+            index = int(token)
+            if index >= len(value):
+                raise ValueError('unknown_field_path')
+            value = value[index]
+        else:
+            raise ValueError('unknown_field_path')
+    if isinstance(value, (dict, list)):
+        raise ValueError('field_path_requires_scalar')
+    return value
+
+
 def check_citations(citations: list[dict], items: list[dict], refs: list[dict]) -> dict:
     """Check identity and literal quotes, explicitly leaving entailment unchecked.
 
@@ -121,6 +158,16 @@ def check_citations(citations: list[dict], items: list[dict], refs: list[dict]) 
             errors.append({'position': position, 'code': 'missing_quote'})
             continue
         item = items[row['index']]
+        if 'field_path' in citation:
+            try:
+                value = _pointer_scalar(item, citation['field_path'])
+            except ValueError as exc:
+                errors.append({'position': position, 'code': str(exc)})
+                continue
+            matches = quote in value if isinstance(value, str) else quote == _canonical(value)
+            if not matches:
+                errors.append({'position': position, 'code': 'quote_not_in_field'})
+            continue
         # Check individual original values; never concatenate source fields.
         values = [item.get(key) for key in ('text', 'title', 'at', 'end')]
         values.extend(_metadata_literals(item.get('metadata', {})))

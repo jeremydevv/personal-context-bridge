@@ -65,3 +65,19 @@ Literal quotes are checked against individual original body, title, timestamp,
 and metadata values (including nested values), rather than serialized joins or
 object keys. Authentic literal text still
 requires a separate semantic-support assessment.
+
+
+## One-read context preparation
+
+`summary_context.prepare_summary_context(source, value, items, refs, question='',
+limit=8, max_characters=64000)` combines the complete summary, typed source catalog
+and optional locally selected original excerpts. It makes no inference call.
+A Health statistics object duplicated in the projected facts and catalog is
+included once, only after exact equality is established. Every original identity
+and statistics value remains available.
+
+The character budget applies to the complete returned context, including selection
+metadata. It may omit original reads, reporting their IDs/counts and incomplete
+coverage. It never trims generated claims or catalog metadata to fit. A base
+context that cannot fit requires existing paged summary/evidence reads. Stable IDs,
+literal authenticity, and an efficient context pack do not prove semantic support.

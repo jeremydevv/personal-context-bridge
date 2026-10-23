@@ -1,11 +1,15 @@
 # iCloud Drive
 
-The main Personal Context MCP exposes six read-only tools even before an Apple
-account is connected: `icloud_drive_status`, `list_icloud_drive`,
-`search_icloud_drive`, `icloud_drive_file_info`, `read_icloud_drive_text`, and
-`read_icloud_drive_chunk`. Search matches filenames, not file contents. Text reads
-support bounded UTF-8 files; binary originals are available as base64 chunks.
-This is on-demand live access, not an encrypted offline Drive mirror or PDF parser.
+The main Personal Context MCP exposes eleven tools: status, folder segments,
+filtered listing/search, AI metadata search, file info, text/chunk reads, native
+tagging, folder creation and regular-file moves. Native Finder-tag checks are
+mandatory for every data operation; the Mac receiver must be installed and enabled.
+Identification-tagged files and tagged-folder descendants stay inaccessible.
+Writer permission has no delete, content upload or overwrite operation.
+
+The experimental Rclone authentication setup below remains an independent local
+test path. Its listing verification does **not** verify the guarded MCP connection.
+See the native receiver section for required connection/permission checks.
 
 ## Experimental Linux authentication
 
@@ -56,35 +60,79 @@ established by fixture tests or successful compilation. Official Rclone docs
 mention a 30-day trust token; actual sessions may need attention sooner:
 https://rclone.org/iclouddrive/ .
 
-## Read boundaries
+## Rclone terminal boundaries
 
-Only fixed `lsjson`, `cat`, local `listremotes` and internal redacted-config checks are reachable from
-tools. Paths cannot choose another remote, escape the Drive root or inject flags.
-The adapter verifies the configured backend is iclouddrive, forces service drive,
-and runs only read commands with no stdin, a minimal environment, suppressed raw
-stderr, a 45-second process-group deadline and at most 4 MiB of output. Reads are
-serialized with local authentication to protect session refresh writes. File
-chunks cap at 256 KiB; recursive filename search caps depth at ten and fails
-explicitly if output is too large. No permanent plaintext data cache or mount is
-created. Session credentials can refresh locally even for read-only file access.
+The setup adapter permits fixed read commands only, validates the iclouddrive
+backend and forces service drive. Terminal verification is independent of the
+native-tag-aware MCP data tools. Do not use raw terminal reads as a workaround for
+an MCP policy denial. The main MCP uses the Mac receiver described below.
 
-`status` is local only unless `probe=true`; configured credentials do not imply
-live access. Listing pagination is a bounded in-memory snapshot of a folder and
-may shift if it changes between calls. Returned paths are relative to the
-requested folder; join them to that folder for a subsequent file read. Compare
-metadata between chunks of a changing file. File contents are untrusted.
+## Native Finder tags, folder scopes and writer permissions
 
-The existing context tunnel exposes the new tools. ChatGPT may cache its tool
-catalog; if absent, refresh the existing context connection and start a new chat.
-No new app connection or Apple credentials in a plugin archive are needed.
+MCP data operations now require the Mac native receiver. Rclone's Drive backend
+cannot expose Finder tags; a filename heuristic or local substitute tag store
+cannot enforce the requested exclusion. Rclone remains installed for independent
+terminal authentication/testing, but MCP does not fall back to its data commands.
+The Mac must be awake and reachable for every file operation. Metadata reflects
+the Mac's synced view; this does not prove instantaneous iCloud convergence.
 
-## USB access check
+Run `python3 scripts/install_icloud_native.py` **on the Mac**. This only installs
+the stdlib receiver and an owner-only disabled config at
+`~/.config/personal-context-bridge/icloud-native.json`; it does not inspect files.
+The receiver command is
+`~/.local/share/personal-context-bridge/bin/icloud-drive-receiver`.
+Before enabling, verify the configured root is the intended authenticated Drive,
+its native tags are synced, and native read/write permissions work using temporary
+fixtures. Set local config `enabled` true when actual connection is authorized.
+`permission` may be `reader` or `writer`; writer only adds native tag edits,
+one-folder creation and regular-file moves. It has no delete/upload/content-edit
+operation. Installation preserves an existing config. Never grant root permissions.
 
-Run `python -m personal_context.icloud_setup check-key` locally after inserting
-the key. This enumerates FIDO HID devices without assertions, PIN attempts or
-Apple traffic. Authentication refuses to start until a readable/writable FIDO
-device is present. A browser's device permission does not prove terminal access.
-If the exact enumerated device is inaccessible, grant this user access to that
-specific device using your Ubuntu administrator session, then recheck. Do not
-make all hidraw devices world-writable. USB access cannot be verified while the
-key is absent; the authentication helper reports this explicitly.
+The local config `segments` maps names to root-relative folders, for example
+`{"drive":"", "work":"Work", "school":"School"}` (fictional names).
+Remove `drive` to restrict access to only named roots. Tool paths stay relative to
+Drive root, and an empty list/search path uses the selected segment root. These
+are backend scope boundaries, checked again for direct reads and writes. The
+administrator changes this config locally; an MCP caller cannot broaden scopes.
+
+On Ubuntu set `PERSONAL_CONTEXT_ICLOUD_NATIVE_ENABLED=1`,
+`PERSONAL_CONTEXT_ICLOUD_NATIVE_TARGET` to the existing pinned SSH Mac target and
+`PERSONAL_CONTEXT_ICLOUD_NATIVE_COMMAND` to the absolute installed receiver. If
+omitted, target and command derive from the existing Apple-write transport.
+Both connection gates remain disabled during preparation. No key or Apple session
+is transferred to the Mac receiver. There is no remote shell interpolation of
+filenames, tags, filters or sentence text: they travel only as bounded JSON stdin.
+
+Tools list/search by folder segment, path/name substring, native tags (`all`/`any`),
+extension and creation/modification date bounds. Dates are ISO dates at UTC midnight
+or offset-aware timestamps; after is inclusive and before exclusive. Results default
+to newest modification first, with optional oldest/name sorting. Searches scan at
+most 2000 entries and depth 10; narrow scopes rather than silently claiming a full
+search. Unknown tag metadata, special files and symlinks deny access. Native
+`identification` tags match trimmed Unicode-normalized names without case sensitivity.
+Tagged folders protect descendants. Protected items cannot be retagged, moved,
+read by exact path or passed into AI search. Adding identification is permitted
+and immediately hides that item; removing it through MCP is forbidden.
+
+`smart_search_icloud_drive` selects up to ten files from a sentence using the
+existing shared ChatGPT subscription, with at most forty allowed metadata
+candidates. The local shortlist combines sentence terms and recent modifications.
+Only name/folder/tag/date metadata is sent to inference. Results include optional
+8 KiB UTF-8 excerpts retrieved locally after current tag/revision verification.
+This is AI metadata retrieval, **not full file-body semantic search**. PDFs/Office
+files receive metadata only. No embeddings endpoint, hosted file-search service,
+paid API fallback or persistent plaintext content index is used.
+
+Writer tools require inspected revisions. Folder creation requires the existing
+parent's revision; file moves require source and destination-parent revisions.
+Exclusive native rename refuses existing destinations and cross-device moves;
+there is no copy/delete fallback. Moving whole folders is rejected. Tag edits
+preserve unrelated tags and existing Finder color suffixes. Native tags are read
+and written on held file descriptors, and read results are rechecked before
+return. This protects against detected concurrent edits; the Mac filesystem and
+remote iCloud clients do not provide an atomic global tag snapshot or inode-conditional
+rename. Concurrent namespace replacement can occur between checking and mutation;
+post-operation identity checks report uncertainty rather than claiming completion
+or attempting a potentially destructive rollback. Do not run concurrent folder
+reorganization during writer operations. After an
+uncertain SSH write outcome, inspect both paths before a deliberate retry.

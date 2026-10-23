@@ -83,7 +83,9 @@ class McpIntegrationTests(unittest.IsolatedAsyncioTestCase):
                                       "read_apple_voice_memo_transcript", "apple_voice_memo_timeline",
                                       "apple_voice_memo_status", "icloud_drive_status", "list_icloud_drive",
                                       "search_icloud_drive", "icloud_drive_file_info",
-                                      "read_icloud_drive_text", "read_icloud_drive_chunk"}, names)
+                                      "read_icloud_drive_text", "read_icloud_drive_chunk",
+                                      "list_icloud_drive_segments", "smart_search_icloud_drive",
+                                      "tag_icloud_drive_file", "create_icloud_drive_folder", "move_icloud_drive_file"}, names)
                     voice = await session.call_tool("get_personal_record", {
                         "kind": "voice_memo", "record_id": "voice-demo"})
                     self.assertFalse(voice.isError)

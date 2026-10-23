@@ -1,5 +1,19 @@
 # Connect your own sources
 
+Start with the [fictional quickstart](../README.md#quickstart), then choose a
+[resource-specific README](../README.md#pick-your-sources). For an individual call,
+use the [linked MCP tool directory](TOOLS.md). Each tool has its own README and
+links back to the source collection instructions.
+
+## Setup checklist
+
+1. Initialize a private archive outside the checkout; keep demo and real roots separate.
+2. Connect one source, with its own permissions and private credentials.
+3. Run collection manually and verify a known record plus its collection timestamp.
+4. Add the generated MCP configuration to your client and check tool discovery.
+5. Enable your own schedule only after the manual path works.
+6. Configure optional write workers separately and require client approval.
+
 ## Archive server and MCP client
 
 Clone the repository and install `.[mcp,messages,images]` as in the README. Run

@@ -23,10 +23,17 @@ class DriveMcpTests(unittest.IsolatedAsyncioTestCase):
                     for name in ('icloud_drive_status','list_icloud_drive','search_icloud_drive',
                                  'icloud_drive_file_info','read_icloud_drive_text','read_icloud_drive_chunk'):
                         self.assertTrue(names[name].annotations.readOnlyHint)
+                    for name in ('list_icloud_drive_segments','smart_search_icloud_drive'):
+                        self.assertTrue(names[name].annotations.readOnlyHint)
+                    for name in ('tag_icloud_drive_file','create_icloud_drive_folder','move_icloud_drive_file'):
+                        self.assertFalse(names[name].annotations.readOnlyHint)
+                        result=await session.call_tool(name,{'path':'fixture.txt','revision':'x'} if name=='tag_icloud_drive_file' else {'path':'fixture','parent_revision':'x'} if name=='create_icloud_drive_folder' else {'path':'fixture','destination':'other','revision':'x','destination_parent_revision':'x'})
+                        self.assertTrue(result.isError)
+                    self.assertFalse(any('delete' in n for n in names if 'icloud' in n))
                     result=await session.call_tool('icloud_drive_status',{})
                     self.assertFalse(result.isError)
                     data=result.structuredContent or json.loads(result.content[0].text)
                     self.assertEqual(data['state'],'authentication_required')
                     result=await session.call_tool('list_icloud_drive',{})
                     self.assertTrue(result.isError)
-                    self.assertIn('authentication_required',result.content[0].text)
+                    self.assertIn('native_tag_verification_required',result.content[0].text)

@@ -45,3 +45,13 @@ class PublicationBoundaryTests(unittest.TestCase):
             self.assertNotIn("fictional-personal-marker", str(findings))
         finally:
             release.MARKERS.pop()
+
+    def test_only_reviewed_artwork_bytes_are_allowed(self):
+        self.assertEqual(5, len(release.PUBLIC_ARTWORK))
+        for name in release.PUBLIC_ARTWORK:
+            with self.subTest(name=name):
+                data = (ROOT / name).read_bytes()
+                self.assertEqual([], release.issues(name, data))
+                self.assertTrue(release.issues(name, data + b"altered"))
+        self.assertTrue(release.issues("docs/assets/unreviewed.png", b"PNG\x00"))
+        self.assertTrue(release.issues("runtime/banner.png", b"PNG\x00"))

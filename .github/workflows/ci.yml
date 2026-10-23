@@ -20,3 +20,15 @@ jobs:
       - run: python -m pytest -q tests/saved_video
       - run: python -m build
       - run: python scripts/check_release.py --history
+
+  icloud-native:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify native Finder tags and exclusive moves on fictional files
+        env:
+          PYTHONPATH: src
+        run: python -m unittest discover -s tests -p test_icloud_native.py

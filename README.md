@@ -38,13 +38,14 @@ the repository contains reusable code, templates and fictional examples.
 - **Find the original.** Search records and retrieve bounded text, attachments,
   transcript passages, PDF pages or video frames where supported.
 - **Connect your own sources.** Choose Apple apps, Canvas, Health, travel,
-  Obsidian, Saved videos and optional live iCloud Drive access.
+  Obsidian, Saved videos and optional native-tag-guarded iCloud Drive access.
 - **Keep an encrypted archive.** SQLCipher protects databases; AES-GCM protects
   binary attachments. Keys and runtime state stay outside the checkout.
 - **Check freshness.** Source timestamps distinguish archived information from
   current device state. Archived records remain readable while collectors sleep.
-- **Choose optional actions.** Native Calendar/Reminders editing, Mail sending
-  and Obsidian writes need their own configuration and client approval policy.
+- **Choose optional actions.** Native Calendar/Reminders editing, Mail sending,
+  Obsidian writes and iCloud Drive organization need their own configuration and
+  client approval policy.
 
 ## Quickstart
 
@@ -108,7 +109,7 @@ you want. Collection and scheduling are configured separately from MCP reads.
 | Remembered places | Evidence-linked place names, descriptions and sampled visits | [README](docs/resources/places/README.md) |
 | Obsidian | Allowlisted vault notes and optional revision-checked edits | [README](docs/resources/obsidian/README.md) |
 | Instagram Saved videos | Saved-only video URLs, local speech/OCR and timestamped frames | [README](docs/resources/instagram/README.md) |
-| iCloud Drive | Live read-only folder listings, filename search and bounded file reads | [README](docs/resources/icloud-drive/README.md) |
+| iCloud Drive | Native-tag-guarded file search/reads and optional tag, folder and move actions | [README](docs/resources/icloud-drive/README.md) |
 
 **Looking for a particular call?** Open the [MCP tool directory](docs/TOOLS.md).
 Every tool name links to its own README, including optional refresh and write tools.
@@ -129,7 +130,7 @@ flowchart LR
 ```
 
 Most tools read collected snapshots. Obsidian reads your configured vault files;
-iCloud Drive performs live requests and does not create an offline mirror.
+iCloud Drive uses an authorized, reachable Mac and does not create an offline mirror.
 An optional background worker can produce summaries, keeping generated text
 separate from source records. Confirm important details against the original.
 
@@ -157,7 +158,9 @@ receipt and readback. Uncertain delivery is never automatically retried. A sleep
 Mac cannot guarantee an on-time alert. Mail sending has a separately configured
 sender/worker and a five-minute cancellation window. Obsidian edits require
 explicit enablement and current revisions. Configure client approval for writes;
-tool annotations alone do not enforce approval.
+tool annotations alone do not enforce approval. iCloud Drive data tools require the
+native Mac receiver and Finder-tag checks; its optional writer adds tag edits,
+folder creation and regular-file moves with revision checks.
 
 [Messages-to-Contacts suggestions](docs/MESSAGE-CONTACT-PROPOSALS.md) are a separate,
 manual local proposal ledger. They do not write Contacts or start background scans.

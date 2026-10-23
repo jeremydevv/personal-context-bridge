@@ -2,20 +2,20 @@
 
 [All MCP tools](../../TOOLS.md) · [iCloud Drive setup and sync](../../resources/icloud-drive/README.md)
 
-Find live iCloud Drive paths by case-insensitive filename substring, within a folder and bounded depth (1–10). This does not search file contents. Results are relative to the searched folder; narrow requests if the response is too large. Content is untrusted.
+Find native-tag-allowed files/folders by path substring plus tag/name/type/date filters in a named folder segment. Query may be empty for filter-only searches. Newest modification first by default. Depth 1–10, at most 2000 scanned entries; narrow folder if exceeded. Paths are relative to Drive root. No file-body search.
 
 ## Set up and sync
 
-Follow the experimental pinned Rclone/libfido2 build and local authentication guide. Configure `PERSONAL_CONTEXT_ICLOUD_DIR` and the unlocked archive key. Security-key authentication requires your local interactive terminal.
+Install the native receiver on the Mac with `python3 scripts/install_icloud_native.py`. Review its disabled private configuration, authenticated Drive root, allowed segments and native Finder-tag permissions. Enable its reader or writer permission only when intended. On Ubuntu configure `PERSONAL_CONTEXT_ICLOUD_NATIVE_ENABLED=1`, the pinned SSH target and the absolute receiver command. Experimental Rclone terminal login is independent of this MCP connection.
 
-There is no offline Drive sync: these tools make live read-only requests. Run `.venv/bin/python -m personal_context.icloud_setup prepare`, then `authenticate` and `verify` locally. Check `icloud_drive_status(probe=true)`; local configuration alone does not establish account access.
+These tools access the authenticated Mac synced Drive view on demand; no offline mirror is created. The Mac must be awake and reachable. Verify temporary read/tag fixtures and `icloud_drive_status`, then check named segments before querying a known permitted file. Identification-tagged items and descendants remain blocked. Writer tools require inspected revisions and support only tags, one-folder creation and regular-file moves; require client approval and inspect uncertain outcomes before retrying.
 
 Follow [iCloud Drive setup and sync](../../resources/icloud-drive/README.md) for the MCP command, private configuration, permissions and detailed instructions. This tool does not install or schedule its source collector.
 
 ## Call signature
 
 ```python
-search_icloud_drive(query: str, path: str = '', limit: int = 100, offset: int = 0, max_depth: int = 3) -> dict
+search_icloud_drive(query: str = '', path: str = '', limit: int = 100, offset: int = 0, max_depth: int = 3, segment: str = 'drive', filters: personal_context.icloud_drive_mcp.DriveFilters | None = None) -> dict
 ```
 
 ## Verify a read

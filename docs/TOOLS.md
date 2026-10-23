@@ -230,12 +230,17 @@ Every tool name links to its own README. Each page points to the resource-specif
 
 | Tool | Access |
 | --- | --- |
+| [`create_icloud_drive_folder`](tools/create_icloud_drive_folder/README.md) | Action / opt-in |
 | [`icloud_drive_file_info`](tools/icloud_drive_file_info/README.md) | Read |
 | [`icloud_drive_status`](tools/icloud_drive_status/README.md) | Read |
 | [`list_icloud_drive`](tools/list_icloud_drive/README.md) | Read |
+| [`list_icloud_drive_segments`](tools/list_icloud_drive_segments/README.md) | Read |
+| [`move_icloud_drive_file`](tools/move_icloud_drive_file/README.md) | Action / opt-in |
 | [`read_icloud_drive_chunk`](tools/read_icloud_drive_chunk/README.md) | Read |
 | [`read_icloud_drive_text`](tools/read_icloud_drive_text/README.md) | Read |
 | [`search_icloud_drive`](tools/search_icloud_drive/README.md) | Read |
+| [`smart_search_icloud_drive`](tools/smart_search_icloud_drive/README.md) | Read |
+| [`tag_icloud_drive_file`](tools/tag_icloud_drive_file/README.md) | Action / opt-in |
 
 ## Instagram Saved videos
 

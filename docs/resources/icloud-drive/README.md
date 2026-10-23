@@ -1,16 +1,16 @@
 # iCloud Drive
 
-[Project](../../../README.md) · [All tools](../../TOOLS.md) · [Detailed setup](../../ICLOUD-DRIVE.md)
+[Project](../../../README.md) · [All tools](../../TOOLS.md) · [Detailed setup](../../ICLOUD-DRIVE.md#native-finder-tags-folder-scopes-and-writer-permissions)
 
 ## Set up this resource
 
-Follow the experimental pinned Rclone/libfido2 build and local authentication guide. Configure `PERSONAL_CONTEXT_ICLOUD_DIR` and the unlocked archive key. Security-key authentication requires your local interactive terminal.
+Install the native receiver on the Mac with `python3 scripts/install_icloud_native.py`. Review its disabled private configuration, authenticated Drive root, allowed segments and native Finder-tag permissions. Enable its reader or writer permission only when intended. On Ubuntu configure `PERSONAL_CONTEXT_ICLOUD_NATIVE_ENABLED=1`, the pinned SSH target and the absolute receiver command. Experimental Rclone terminal login is independent of this MCP connection.
 
 Start with the [private archive and client setup](../../SETUP.md#archive-server-and-mcp-client). Keep credentials, data, keys and filled configurations outside the checkout.
 
 ## Collect and verify
 
-There is no offline Drive sync: these tools make live read-only requests. Run `.venv/bin/python -m personal_context.icloud_setup prepare`, then `authenticate` and `verify` locally. Check `icloud_drive_status(probe=true)`; local configuration alone does not establish account access.
+These tools access the authenticated Mac synced Drive view on demand; no offline mirror is created. The Mac must be awake and reachable. Verify temporary read/tag fixtures and `icloud_drive_status`, then check named segments before querying a known permitted file. Identification-tagged items and descendants remain blocked. Writer tools require inspected revisions and support only tags, one-folder creation and regular-file moves; require client approval and inspect uncertain outcomes before retrying.
 
 After manual verification, choose your own schedule from [scheduling](../../SETUP.md#scheduling-backups-and-optional-actions). Cloning this repository does not install a collector or enable timers.
 
@@ -26,9 +26,14 @@ Configure the environment from the detailed setup guide. Standard archive surfac
 
 ## Tools
 
+- [`create_icloud_drive_folder`](../../tools/create_icloud_drive_folder/README.md)
 - [`icloud_drive_file_info`](../../tools/icloud_drive_file_info/README.md)
 - [`icloud_drive_status`](../../tools/icloud_drive_status/README.md)
 - [`list_icloud_drive`](../../tools/list_icloud_drive/README.md)
+- [`list_icloud_drive_segments`](../../tools/list_icloud_drive_segments/README.md)
+- [`move_icloud_drive_file`](../../tools/move_icloud_drive_file/README.md)
 - [`read_icloud_drive_chunk`](../../tools/read_icloud_drive_chunk/README.md)
 - [`read_icloud_drive_text`](../../tools/read_icloud_drive_text/README.md)
 - [`search_icloud_drive`](../../tools/search_icloud_drive/README.md)
+- [`smart_search_icloud_drive`](../../tools/smart_search_icloud_drive/README.md)
+- [`tag_icloud_drive_file`](../../tools/tag_icloud_drive_file/README.md)

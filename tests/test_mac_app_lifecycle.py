@@ -68,5 +68,23 @@ class MacAppLifecycleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
                 "os.environ", {"PERSONAL_CONTEXT_DATA_DIR": directory}), patch(
                 "personal_context.mac_app_lifecycle.subprocess.run", side_effect=boundary):
-            with collected_app("Contacts"):
-                pass
+            for name in ("Contacts", "Mail"):
+                with self.subTest(app=name), collected_app(name):
+                    pass
+
+    def test_mail_opened_by_collection_is_closed_even_after_failure(self):
+        calls = []
+        def boundary(args, **kwargs):
+            calls.append(args)
+            return subprocess.CompletedProcess(args, 0, "false" if len(calls) == 1 else "true", "")
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+                "os.environ", {"PERSONAL_CONTEXT_DATA_DIR": directory}), patch(
+                "personal_context.mac_app_lifecycle.subprocess.run", side_effect=boundary), patch(
+                "personal_context.mail_collect.wait_for_mail_idle"):
+            with self.assertRaisesRegex(RuntimeError, "export failed"):
+                with collected_app("Mail"):
+                    raise RuntimeError("export failed")
+        cleanup = calls[-1][-1]
+        self.assertIn("quit()", cleanup)
+        self.assertIn("outgoingMessages", cleanup)
+        self.assertIn("frontmost", cleanup)

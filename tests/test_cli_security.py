@@ -138,7 +138,9 @@ class CliSecurityTests(unittest.TestCase):
                         "collected_at": "2026-10-01T00:00:00Z", "complete": True,
                         "records": []} for index in range(32)]
             sent = []
-            with patch("personal_context.cli.request_mail_refresh"), \
+            with patch("personal_context.cli.collected_app"), \
+                 patch("personal_context.cli.wait_for_mail_idle"), \
+                 patch("personal_context.cli.request_mail_refresh"), \
                  patch("personal_context.cli.list_mailboxes", return_value=[mailbox]), \
                  patch("personal_context.cli.export_mailbox", return_value=(batches, 0)), \
                  patch("personal_context.cli.deliver_ssh", side_effect=lambda config, payload, timeout: sent.append(json.loads(payload))), \

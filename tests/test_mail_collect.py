@@ -30,6 +30,14 @@ class MailCollectorTests(unittest.TestCase):
                 mail_collect.request_mail_refresh()
         self.assertNotIn("private diagnostic", str(error.exception))
 
+    def test_cold_launch_refresh_retries_transient_apple_event_failure(self):
+        from subprocess import CompletedProcess
+        with patch("personal_context.mail_collect.subprocess.run", side_effect=[
+                CompletedProcess([], 0, "", ""),
+                CompletedProcess([], 1, "", "AppleEvent not ready"),
+                CompletedProcess([], 0, "", "")]), patch("time.sleep"):
+            mail_collect.request_mail_refresh()
+
     def lines(self, footer=True):
         values = [
             {"type": "header", "mailboxRowid": 17, "count": 2, "totalInMailbox": 2},
@@ -143,3 +151,28 @@ class MailCollectorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class MailIdleTests(unittest.TestCase):
+    def test_waits_until_replica_stays_quiet(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = Path(directory) / "Envelope Index"
+            index.write_bytes(b"fixture")
+            calls = []
+            def tick(_):
+                calls.append(1)
+                if len(calls) == 2:
+                    index.write_bytes(b"fixture changed")
+            with patch("time.sleep", side_effect=tick):
+                mail_collect.wait_for_mail_idle(attempts=7, index_path=index)
+            self.assertEqual(7, len(calls))
+
+    def test_busy_replica_times_out_before_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = Path(directory) / "Envelope Index"
+            index.write_bytes(b"fixture")
+            def tick(_):
+                with index.open("ab") as stream:
+                    stream.write(b"change")
+            with patch("time.sleep", side_effect=tick):
+                with self.assertRaisesRegex(RuntimeError, "still busy"):
+                    mail_collect.wait_for_mail_idle(attempts=3, index_path=index)

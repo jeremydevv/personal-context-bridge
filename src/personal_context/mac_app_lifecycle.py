@@ -12,7 +12,7 @@ from pathlib import Path
 
 @contextmanager
 def collected_app(name, command="/usr/bin/osascript"):
-    if name not in ("Contacts", "Notes"):
+    if name not in ("Contacts", "Notes", "Mail"):
         raise ValueError("unsupported read-only automation app")
     # Full and fast sync have separate locks. Serialize each app's lifecycle.
     data_dir = Path(os.environ.get("PERSONAL_CONTEXT_DATA_DIR",
@@ -47,9 +47,15 @@ def collected_app(name, command="/usr/bin/osascript"):
             if not already_running:
                 original_error = sys.exc_info()[1]
                 try:
+                    condition = "app.running()"
+                    if name == "Mail":
+                        from .mail_collect import wait_for_mail_idle
+                        wait_for_mail_idle()
+                        # Preserve composition and a user who brought Mail forward.
+                        condition += " && !app.frontmost() && app.outgoingMessages().length === 0"
                     cleanup = subprocess.run(
                         [command, "-l", "JavaScript", "-e",
-                         'const app = ' + app + '; if (app.running()) app.quit();'],
+                         'const app = ' + app + '; if (' + condition + ') app.quit();'],
                         capture_output=True, text=True, timeout=30)
                     if cleanup.returncode:
                         raise RuntimeError("Could not close " + name + " after collection")

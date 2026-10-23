@@ -14,7 +14,8 @@ from pathlib import Path
 
 from .collect import collect_batches, collect_recent_calendar, run_cli
 from .contacts_collect import collect_contacts_snapshot
-from .mail_collect import list_mailboxes, export_mailbox, recent_mailbox, request_mail_refresh
+from .mail_collect import list_mailboxes, export_mailbox, recent_mailbox, request_mail_refresh, wait_for_mail_idle
+from .mac_app_lifecycle import collected_app
 from .messages_collect import collect_messages
 from .image_archive import (collect_image_candidates, collect_attachment_candidates,
                             MAX_IMAGE_BYTES, MAX_ATTACHMENT_BYTES)
@@ -456,39 +457,41 @@ def main(argv=None):
         selected = set(config.get("mailbox_urls", []))
         if not selected and not config.get("all_mailboxes"):
             raise ValueError("select mailboxes before Mail sync")
-        request_mail_refresh()
-        mailboxes = list_mailboxes()
-        if selected - {item["mailboxUrl"] for item in mailboxes}:
-            raise ValueError("configured Mail mailbox is unavailable")
-        spool.flush(lambda payload: deliver_ssh(config, payload, timeout=1800))
-        timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        chosen = mailboxes if config.get("all_mailboxes") else [item for item in mailboxes if item["mailboxUrl"] in selected]
-        if args.action == "mail-fast-sync":
-            since = (datetime.now(timezone.utc) - timedelta(days=3)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        with collected_app("Mail"):
+            request_mail_refresh()
+            wait_for_mail_idle()
+            mailboxes = list_mailboxes()
+            if selected - {item["mailboxUrl"] for item in mailboxes}:
+                raise ValueError("configured Mail mailbox is unavailable")
+            spool.flush(lambda payload: deliver_ssh(config, payload, timeout=1800))
+            timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            chosen = mailboxes if config.get("all_mailboxes") else [item for item in mailboxes if item["mailboxUrl"] in selected]
+            if args.action == "mail-fast-sync":
+                since = (datetime.now(timezone.utc) - timedelta(days=3)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+                for index, mailbox in enumerate(chosen, 1):
+                    batches, missing = recent_mailbox(mailbox, since, timestamp)
+                    for offset in range(0, len(batches), 4):
+                        spool.enqueue(batches[offset:offset + 4])
+                        spool.flush(lambda payload: deliver_ssh(config, payload, timeout=1800))
+                    print(json.dumps({"mailbox_index": index, "mailbox_count": len(chosen),
+                                      "recent_records": sum(len(batch["records"]) for batch in batches),
+                                      "missing_bodies": missing}), flush=True)
+                return 0
             for index, mailbox in enumerate(chosen, 1):
-                batches, missing = recent_mailbox(mailbox, since, timestamp)
+                batches, missing = export_mailbox(mailbox, timestamp, limit=config.get("limit", 50000))
                 for offset in range(0, len(batches), 4):
                     spool.enqueue(batches[offset:offset + 4])
                     spool.flush(lambda payload: deliver_ssh(config, payload, timeout=1800))
                 print(json.dumps({"mailbox_index": index, "mailbox_count": len(chosen),
-                                  "recent_records": sum(len(batch["records"]) for batch in batches),
+                                  "records": sum(len(batch["records"]) for batch in batches),
                                   "missing_bodies": missing}), flush=True)
-            return 0
-        for index, mailbox in enumerate(chosen, 1):
-            batches, missing = export_mailbox(mailbox, timestamp, limit=config.get("limit", 50000))
-            for offset in range(0, len(batches), 4):
-                spool.enqueue(batches[offset:offset + 4])
+            if config.get("all_mailboxes"):
+                spool.enqueue([{"schema": 1, "source": "apple-pim", "kind": "inventory",
+                                "scope": "mail", "collected_at": timestamp, "complete": True,
+                                "records": [{"id": mailbox["mailboxUrl"], "title": mailbox["mailboxUrl"]}
+                                            for mailbox in mailboxes]}])
                 spool.flush(lambda payload: deliver_ssh(config, payload, timeout=1800))
-            print(json.dumps({"mailbox_index": index, "mailbox_count": len(chosen),
-                              "records": sum(len(batch["records"]) for batch in batches),
-                              "missing_bodies": missing}), flush=True)
-        if config.get("all_mailboxes"):
-            spool.enqueue([{"schema": 1, "source": "apple-pim", "kind": "inventory",
-                            "scope": "mail", "collected_at": timestamp, "complete": True,
-                            "records": [{"id": mailbox["mailboxUrl"], "title": mailbox["mailboxUrl"]}
-                                        for mailbox in mailboxes]}])
-            spool.flush(lambda payload: deliver_ssh(config, payload, timeout=1800))
-        return 0
+            return 0
     if args.action in ("collect", "sync", "fast-sync"):
         calendar_ids = config["calendar_ids"]
         reminder_ids = config["reminder_ids"]

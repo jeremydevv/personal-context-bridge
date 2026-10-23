@@ -3,6 +3,7 @@
 import hashlib
 import json
 import subprocess
+import time
 from pathlib import Path
 
 
@@ -13,18 +14,60 @@ PARTITIONS = 32
 def request_mail_refresh():
     """Wake the signed-in Mail replica and request a fetch before reading it.
 
-    Fetch is asynchronous: acceptance does not prove provider freshness. Leave
-    Mail running so it can finish fetching and subsequent scans can ingest it.
+    Fetch is asynchronous: acceptance does not prove provider freshness. The
+    caller waits for idle activity before snapshotting and restores app state.
     This does not send mail, change accounts, or expand the archive allowlist.
     """
     for command in (["open", "-g", "-a", "Mail"],
                     ["osascript", "-e", 'tell application "Mail" to check for new mail']):
-        try:
-            result = subprocess.run(command, capture_output=True, text=True, timeout=60)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise RuntimeError("Mail refresh request failed") from exc
-        if result.returncode:
+        for attempt in range(3 if command[0] == "osascript" else 1):
+            try:
+                result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                raise RuntimeError("Mail refresh request failed") from exc
+            if result.returncode == 0:
+                break
+            if command[0] == "osascript" and attempt < 2:
+                time.sleep(2)
+        else:
             raise RuntimeError("Mail refresh request failed")
+
+
+def wait_for_mail_idle(attempts=60, index_path=None):
+    """Wait for local replica writes to settle, with a bounded 120-second wait.
+
+    Mail's advertised activity counter fails on current macOS. Ten seconds of
+    quiet after at least ten seconds allows asynchronous fetches to settle;
+    this is a local heuristic, not proof of provider freshness.
+    """
+    if index_path is None:
+        indexes = sorted((Path.home() / "Library/Mail").glob("V*/MailData/Envelope Index"),
+                         key=lambda path: int(path.parents[1].name[1:]))
+        if not indexes:
+            raise RuntimeError("Cannot locate Mail replica")
+        index_path = indexes[-1]
+    index_path = Path(index_path)
+    def signature():
+        values = []
+        for path in (index_path, Path(str(index_path) + "-wal")):
+            try:
+                info = path.stat()
+                values.append((info.st_size, info.st_mtime_ns))
+            except FileNotFoundError:
+                if path == index_path:
+                    raise RuntimeError("Mail replica is unavailable")
+                values.append(None)
+        return values
+    previous = signature()
+    idle = 0
+    for _ in range(attempts):
+        time.sleep(2)
+        current = signature()
+        idle = idle + 1 if current == previous else 0
+        if idle >= 5:
+            return
+        previous = current
+    raise RuntimeError("Mail replica is still busy; snapshot deferred to the next sync")
 
 
 def list_mailboxes(command=str(MAIL_CLI)):

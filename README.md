@@ -134,12 +134,38 @@ client has refreshed its tool catalog.
 
 ## How the pieces fit
 
+You run the bridge on machines you control. **The archive host** is the computer
+that stores your encrypted context and runs the MCP tools. If you see a setup
+called an “Ubuntu box,” that just means a Linux computer doing this job: yours
+could be a spare PC, a mini PC, a Linux VM or a server you rent. You supply the
+machine and your own accounts; cloning this repository does not connect to the
+creator’s infrastructure.
+
+| Part | What it does | What you need |
+| --- | --- | --- |
+| **Your archive host** | Stores encrypted records and attachments, runs search/MCP tools and configured background jobs. | Linux with Python 3.11+ is the tested host. It needs to be running when you query it or receive uploads. |
+| **Your Mac** | Uses your signed-in Apple apps and macOS permissions to collect selected data and perform supported native actions. Sends collected records to your archive host over SSH. | Needed for Apple sources and native iCloud Drive access; optional if you only use other sources. |
+| **Your phone** | Sends selected Health or OwnTracks location data to your host’s configured receivers. | Optional; needs its own app permissions, pairing and a protected network route. |
+| **Your AI client** | Connects to the MCP tools and requests relevant records for your conversation. | An MCP-capable client; ChatGPT web needs the authenticated bridge described below. It can run on a different device. |
+
+**A practical starting layout is a Linux archive host plus your existing Mac for
+Apple sources.** You do not need a second Mac. A single Mac can also host the
+archive, but currently needs a native SQLCipher build and additional setup;
+it is not the tested Linux quickstart. With no Apple sources, you can skip the Mac.
+See [choose your machines](docs/SETUP.md#choose-your-machines) before installing.
+
 ![Selected sources feed encrypted private archives. MCP tools read archived evidence plus authorized live Obsidian and iCloud Drive sources, then return results to your MCP client and chosen model.](docs/assets/architecture.svg)
 
 Most tools read collected snapshots. Obsidian reads your configured vault files;
 iCloud Drive uses an authorized, reachable Mac and does not create an offline mirror.
 An optional background worker can produce summaries, keeping generated text
 separate from source records. Confirm important details against the original.
+
+If your Mac sleeps or disconnects, the host can still search records already
+collected. New Apple collection and native actions wait for the Mac to be
+available; live iCloud Drive access also needs it. If the archive host is offline,
+its MCP tools are unavailable. GitHub distributes the code and updates; your
+personal archive stays in your own private runtime storage.
 
 For local clients, use the generated private `mcp.json`. For ChatGPT web, follow
 [the authenticated tunnel guide](docs/CHATGPT.md) using your own installation.

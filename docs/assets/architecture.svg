@@ -5,15 +5,15 @@
 <rect width="720" height="850" rx="24" fill="#fffdf5"/>
 <g font-family="Arial, Helvetica, sans-serif" text-anchor="middle" fill="#29251b">
 <rect x="30" y="25" width="660" height="168" rx="18" fill="#fff5ce" stroke="#b99a43" stroke-width="2"/>
-<text x="360" y="64" font-size="27" font-weight="700">Your selected sources</text>
-<text x="360" y="101" font-size="22">Mac apps · phone uploads</text>
+<text x="360" y="64" font-size="27" font-weight="700">Your Mac and selected sources</text>
+<text x="360" y="101" font-size="22">Mac collector · optional phone uploads</text>
 <text x="360" y="132" font-size="22">Canvas · selected imports</text>
 <text x="360" y="163" font-size="22">Collection and permissions configured per source</text>
 <path d="M360 198 V268" stroke="#795f19" stroke-width="3" marker-end="url(#arrow)"/>
 <rect x="180" y="206" width="360" height="28" fill="#fffdf5"/><text x="360" y="227" font-size="19">Collect and transfer</text>
 <rect x="30" y="280" width="660" height="110" rx="18" fill="#fff5ce" stroke="#b99a43" stroke-width="2"/>
-<text x="360" y="319" font-size="27" font-weight="700">Encrypted private archives</text>
-<text x="360" y="356" font-size="22">Original records and available attachments</text>
+<text x="360" y="319" font-size="27" font-weight="700">Your archive host</text>
+<text x="360" y="356" font-size="22">Encrypted archive, search and background jobs</text>
 <path d="M360 395 V457" stroke="#795f19" stroke-width="3" marker-end="url(#arrow)"/>
 <rect x="180" y="403" width="360" height="28" fill="#fffdf5"/><text x="360" y="424" font-size="19">Read archived evidence</text>
 <rect x="30" y="470" width="660" height="174" rx="18" fill="#fff5ce" stroke="#b99a43" stroke-width="2"/>

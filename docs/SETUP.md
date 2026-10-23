@@ -14,6 +14,42 @@ links back to the source collection instructions.
 5. Enable your own schedule only after the manual path works.
 6. Configure optional write workers separately and require client approval.
 
+## Choose your machines
+
+These are roles in your installation, not services provided by this repository:
+
+- **Archive host:** your computer running the encrypted database, MCP servers,
+  source receivers and any enabled processing workers. A spare Linux PC, mini PC,
+  Linux VM or rented Linux server can fill this role if it meets the dependency,
+  storage and network requirements. Linux is the tested platform; “Ubuntu box”
+  simply means an Ubuntu computer serving as this host, not a special product.
+- **Mac collector:** your Mac, signed into the accounts you want to use. It reads
+  selected Apple sources using native helpers and granted permissions, then
+  transfers records to the host over SSH. Native Apple actions and live iCloud
+  Drive access also require the authorized Mac. A Linux server cannot replace
+  these macOS permissions by signing into an Apple account on a web page.
+- **Phone:** optional source device for Health or OwnTracks uploads. Configure
+  its receiver destination and credentials separately from the Mac SSH route.
+- **AI client:** the application where you chat. It connects to the host’s MCP
+  tools; it does not need to store the archive itself. A client on another machine
+  needs a configured transport to the host, not a copied configuration containing
+  interpreter paths that only exist on the server.
+
+**Choose a layout:**
+
+| Layout | When it fits | Current setup |
+| --- | --- | --- |
+| Linux host + your existing Mac | You want Apple data available to AI clients while your Mac is sometimes asleep. | Follow the Linux quickstart on the host, then configure the Mac collector below. Archived reads remain available while the host runs; fresh Apple reads/actions need the Mac. |
+| Linux host without a Mac | You want sources such as Canvas, phone uploads or host-accessible Obsidian vaults. | Follow the Linux quickstart and only the relevant source guides. Apple collectors and native Drive access remain unavailable. |
+| One Mac for both roles | You want to keep the archive and Apple collection on one computer. | Requires a native SQLCipher build/binding and collector transport configuration for that same machine. This is additional setup, not the tested Linux quickstart; all roles stop when the Mac sleeps. |
+
+Keep keys, credentials and runtime data outside the source checkout on the
+machines that need them. Use your own SSH alias, paths and authenticated network
+endpoints. Private networking such as a VPN can connect your machines; it does not
+replace account consent or macOS permissions. ChatGPT web additionally needs
+[the authenticated MCP tunnel](CHATGPT.md). No Docker image or unified setup
+wizard is currently supplied.
+
 ## Archive server and MCP client
 
 Clone the repository and install `.[mcp,messages,images]` as in the README. Run

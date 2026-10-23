@@ -4,7 +4,7 @@ The main Personal Context MCP exposes eleven tools: status, folder segments,
 filtered listing/search, AI metadata search, file info, text/chunk reads, native
 tagging, folder creation and regular-file moves. Native Finder-tag checks are
 mandatory for every data operation; the Mac receiver must be installed and enabled.
-Identification-tagged files and tagged-folder descendants stay inaccessible.
+Configured protected files and tagged-folder descendants stay inaccessible.
 Writer permission has no delete, content upload or overwrite operation.
 
 The experimental Rclone authentication setup below remains an independent local
@@ -83,7 +83,13 @@ The receiver command is
 `~/.local/share/personal-context-bridge/bin/icloud-drive-receiver`.
 Before enabling, verify the configured root is the intended authenticated Drive,
 its native tags are synced, and native read/write permissions work using temporary
-fixtures. Set local config `enabled` true when actual connection is authorized.
+fixtures. Set `protected_tags` to a nonempty list of your protected native tag
+names, for example `["Restricted", "Confidential"]` (fictional policy). The
+receiver refuses access if this setting is missing, empty or invalid. Existing
+installations must copy their current protection policy into this private setting
+before updating the receiver; never replace it with an example policy. The installer
+preserves existing configuration and leaves new configurations disabled with an
+empty policy. Set local config `enabled` true when actual connection is authorized.
 `permission` may be `reader` or `writer`; writer only adds native tag edits,
 one-folder creation and regular-file moves. It has no delete/upload/content-edit
 operation. Installation preserves an existing config. Never grant root permissions.
@@ -108,10 +114,10 @@ extension and creation/modification date bounds. Dates are ISO dates at UTC midn
 or offset-aware timestamps; after is inclusive and before exclusive. Results default
 to newest modification first, with optional oldest/name sorting. Searches scan at
 most 2000 entries and depth 10; narrow scopes rather than silently claiming a full
-search. Unknown tag metadata, special files and symlinks deny access. Native
-`identification` tags match trimmed Unicode-normalized names without case sensitivity.
+search. Unknown tag metadata, special files and symlinks deny access.
+Configured native `protected_tags` match trimmed Unicode-normalized names without case sensitivity.
 Tagged folders protect descendants. Protected items cannot be retagged, moved,
-read by exact path or passed into AI search. Adding identification is permitted
+read by exact path or passed into AI search. Adding a configured protected tag is permitted
 and immediately hides that item; removing it through MCP is forbidden.
 
 `smart_search_icloud_drive` selects up to ten files from a sentence using the

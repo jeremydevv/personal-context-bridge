@@ -116,7 +116,7 @@ Keep existing schedules initially. Scheduled and MCP-requested work emit the sam
 receipts and use the same per-source resource locks. Configure installed job
 labels and executable paths explicitly rather than substituting public example
 labels. Preserve private runtime transfer retries, timeouts, credentials and the
-existing disabled Mac archive-backup policy.
+operator-configured archive-backup policy.
 
 Ship incrementally: ledger/protocol and source-only dispatch; Apple and Canvas
 runner integration; other-source adapters and common status; Contacts native
@@ -137,7 +137,7 @@ readback per dispatchable source, plus one source-only Apple refresh that leaves
 unrelated apps closed. Verify all-source reporting includes push-only/manual and
 not-connected sources without falsely completing them. Native Contacts requires
 field/ID parity and no Contacts.app launch. Confirm original schedules and Mac
-backup opt-out remain intact. Verify backend tool registration independently of
+backup settings remain intact. Verify backend tool registration independently of
 client tool discovery, and bind CI claims to the published source commit.
 
 ## Open decisions

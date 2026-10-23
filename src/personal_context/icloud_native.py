@@ -118,7 +118,11 @@ def exclusive_move(source_fd,source,dest_fd,dest):
 
 
 class NativeDrive:
-    def __init__(self,root,segments=None,tags=None,writer=False):
+    def __init__(self,root,segments=None,tags=None,writer=False,*,protected_tags=None):
+        # Policy belongs to private receiver configuration, never MCP input.
+        if not protected_tags:
+            raise ValueError('Configure at least one protected native tag before enabling access')
+        self.protected_tags=frozenset(fold(t) for t in tag_values(protected_tags))
         self.writer=writer is True
         self.root=Path(root).absolute()
         if self.root.resolve()!=self.root:raise NativeError('root_must_not_contain_symlinks')
@@ -150,7 +154,7 @@ class NativeDrive:
         s=os.fstat(fd)
         if not (stat.S_ISDIR(s.st_mode) or stat.S_ISREG(s.st_mode)):raise NativeError('access_denied')
         values=tag_values(self.tags(fd))
-        if any(fold(t)=='identification' for t in values):raise NativeError('access_denied')
+        if any(fold(t) in self.protected_tags for t in values):raise NativeError('access_denied')
         return values
 
     def _scope(self,segment,path):
@@ -295,7 +299,7 @@ class NativeDrive:
             if operation=='tag':
                 add=tag_values(request.get('add',[]));remove=tag_values(request.get('remove',[]))
                 if not add and not remove:raise ValueError('Supply tag additions or removals')
-                if any(fold(t)=='identification' for t in remove):raise ValueError('Protected tag removal forbidden')
+                if any(fold(t) in self.protected_tags for t in remove):raise ValueError('Protected tag removal forbidden')
                 if {fold(t) for t in add}&{fold(t) for t in remove}:raise ValueError('Conflicting tags')
                 values=[t for t in item['tags'] if fold(t) not in {fold(v) for v in remove}]
                 for tag in add:
@@ -304,7 +308,7 @@ class NativeDrive:
                 self.tags.set(source,values)
                 self._identity_at(path,source)
                 if {fold(t) for t in self.tags(source)}!={fold(t) for t in values}:raise NativeError('write_outcome_unconfirmed')
-                if any(fold(t)=='identification' for t in values):return {'state':'completed','now_protected':True}
+                if any(fold(t) in self.protected_tags for t in values):return {'state':'completed','now_protected':True}
                 return {'state':'completed','item':self._info(path)}
             destination=self._scope(segment,request.get('destination',''))
             if not destination or destination==path or destination.startswith(path+'/'):raise ValueError('Invalid destination')
@@ -329,7 +333,8 @@ def main():
         if stat.S_ISLNK(s.st_mode) or s.st_uid!=os.getuid() or s.st_mode&0o077 or s.st_size>16384:raise NativeError('private_config_required')
         cfg=json.loads(config.read_text())
         if cfg.get('enabled') is not True:raise NativeError('native_connection_not_enabled')
-        drive=NativeDrive(cfg['root'],cfg.get('segments'),writer=cfg.get('permission')=='writer')
+        drive=NativeDrive(cfg['root'],cfg.get('segments'),writer=cfg.get('permission')=='writer',
+                          protected_tags=cfg.get('protected_tags'))
         raw=sys.stdin.buffer.read(16385)
         if len(raw)>16384:raise ValueError('request_bound')
         # Serialize our own receiver requests, never replay a failed writer.

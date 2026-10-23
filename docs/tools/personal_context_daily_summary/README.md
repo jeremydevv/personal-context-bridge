@@ -2,7 +2,7 @@
 
 [All MCP tools](../../TOOLS.md) · [Personal context setup and sync](../../resources/context/README.md)
 
-Read locally generated, source-cited activity summaries for a YYYY-MM-DD day in New York time. Generated text is unverified; use cited record IDs to confirm details.
+Read locally generated, source-cited activity summaries for a YYYY-MM-DD day in the operator-configured timezone (UTC by default). Generated text is unverified; use cited record IDs to confirm details.
 
 ## Set up and sync
 

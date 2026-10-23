@@ -10,6 +10,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from .store import Store
+from .settings import configured_timezone
 
 
 PROMPT_VERSION = "1"
@@ -18,14 +19,14 @@ DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 
 class EpisodeBuilder:
     def __init__(self, store, summarize, model="gemma4:e4b",
-                 timezone_name="America/New_York", chunk_size=60):
+                 timezone_name=None, chunk_size=60):
         if chunk_size < 1 or chunk_size > 100:
             raise ValueError("episode chunk size must be between 1 and 100")
         self.store = store
         self.summarize = summarize
         self.model = model
-        self.timezone_name = timezone_name
-        self.timezone = ZoneInfo(timezone_name)
+        self.timezone_name = configured_timezone(timezone_name)
+        self.timezone = ZoneInfo(self.timezone_name)
         self.chunk_size = chunk_size
 
     def _records(self, day):
@@ -135,7 +136,7 @@ def main(argv=None):
     group.add_argument("--day")
     group.add_argument("--all", action="store_true")
     parser.add_argument("--days", type=int, default=30)
-    parser.add_argument("--timezone", default="America/New_York")
+    parser.add_argument("--timezone", help="IANA zone; defaults to PERSONAL_CONTEXT_TIMEZONE or UTC")
     parser.add_argument("--model", default="gemma4:e4b")
     parser.add_argument("--ollama-url", default=os.environ.get("PERSONAL_CONTEXT_OLLAMA_URL", DEFAULT_OLLAMA_URL))
     args = parser.parse_args(argv)

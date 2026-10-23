@@ -7,13 +7,13 @@ Status: User-directed design
 
 Let chat-approved jobs create events and timed reminders in the user's existing
 Apple Calendar and Reminders accounts/lists. Do not add or require a separate
-calendar account or list. Queue jobs durably on Ubuntu-box and deliver them to
+calendar account or list. Queue jobs durably on the archive server and deliver them to
 the Mac when it is reachable.
 
 ## User flow
 
 1. Chat uses context to prepare one exact event or reminder with a resolved
-   America/New_York date/time and any requested alert.
+   operator-configured timezone and date/time and any requested alert.
 2. The user approves that exact item before the MCP queues it.
 3. Ubuntu stores the job in a private encrypted outbox and immediately returns
    its job ID and `queued` state. Queued means the Mac has not created the item.

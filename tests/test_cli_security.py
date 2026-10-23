@@ -67,7 +67,7 @@ class CliSecurityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "config.json"
             config.write_text(json.dumps({"calendar_ids": [], "reminder_ids": [], "all_reminders": True,
-                                          "remote_host": "ubuntu-box", "remote_project": "/tmp/context",
+                                          "remote_host": "archive-server", "remote_project": "/tmp/context",
                                           "spool_dir": str(Path(directory) / "spool")}))
             listing = {"success": True, "lists": [{"id": "one"}, {"id": "two"}]}
             with patch("personal_context.cli.run_cli", return_value=listing), \
@@ -83,7 +83,7 @@ class CliSecurityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "config.json"
             config.write_text(json.dumps({"calendar_ids": [], "reminder_ids": [], "all_calendars": True,
-                                          "remote_host": "ubuntu-box", "remote_project": "/tmp/context",
+                                          "remote_host": "archive-server", "remote_project": "/tmp/context",
                                           "spool_dir": str(Path(directory) / "spool")}))
             listing = {"success": True, "calendars": [{"id": "one"}, {"id": "two"}]}
             with patch("personal_context.cli.run_cli", return_value=listing), \
@@ -129,7 +129,7 @@ class CliSecurityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "config.json"
             config.write_text(json.dumps({"calendar_ids": [], "reminder_ids": [],
-                                          "all_mailboxes": True, "remote_host": "ubuntu-box",
+                                          "all_mailboxes": True, "remote_host": "archive-server",
                                           "remote_project": "/tmp/context",
                                           "spool_dir": str(Path(directory) / "spool")}))
             mailbox = {"localMailboxId": 1, "mailboxUrl": "synthetic://mailbox", "messageCount": 0}

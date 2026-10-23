@@ -15,6 +15,8 @@ import tarfile
 import zipfile
 import argparse
 import hashlib
+import gzip
+import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 BAD_PARTS = {
@@ -95,6 +97,84 @@ PUBLIC_ARTWORK = {
 MARKERS = [
     x for x in os.environ.get("PERSONAL_CONTEXT_PRIVATE_MARKERS", "").splitlines() if x
 ]
+
+
+def neutral_gzip_metadata(package):
+    """Require one gzip member with no optional identity-bearing header fields."""
+    with open(package, 'rb') as raw:
+        header = raw.read(10)
+        if len(header) != 10 or header[:4] != b'\x1f\x8b\x08\x00':
+            return False
+        raw.seek(0)
+        decoder = zlib.decompressobj(31)
+        while data := raw.read(65536):
+            while data:
+                decoder.decompress(data, 65536)
+                if decoder.eof:
+                    return not decoder.unused_data and not raw.read(1)
+                data = decoder.unconsumed_tail
+        return False
+
+
+def tar_metadata_issues(package):
+    """Check physical headers too: effective PAX fields can hide earlier owners.
+
+    Only ordinary files/directories and local path/mtime PAX records are supported.
+    Diagnostic text never contains header values or extension payloads.
+    """
+    failure = str(Path(package).name) + ': archive metadata requires review'
+    try:
+        if not neutral_gzip_metadata(package):
+            return [failure]
+        with gzip.open(package, 'rb') as stream:
+            while True:
+                block = stream.read(512)
+                if block == b'\0' * 512:
+                    # No unreviewed appended tar, gzip member or trailing payload.
+                    while tail := stream.read(65536):
+                        if tail.strip(b'\0'):
+                            return [failure]
+                    return []
+                if len(block) != 512:
+                    return [failure]
+                # Parsed strings truncate at NUL; inspect the full owner fields.
+                neutral_owners = (b'\0' * 32, b'root' + b'\0' * 28)
+                if block[265:297] not in neutral_owners or block[297:329] not in neutral_owners:
+                    return [failure]
+                header = tarfile.TarInfo.frombuf(block, 'utf-8', 'strict')
+                if (header.uid != 0 or header.gid != 0
+                        or header.uname not in ('', 'root') or header.gname not in ('', 'root')
+                        or header.type not in (tarfile.REGTYPE, tarfile.AREGTYPE,
+                                               tarfile.DIRTYPE, tarfile.XHDTYPE)):
+                    return [failure]
+                if issues(header.name, b'') or header.linkname or header.size < 0:
+                    return [failure]
+                if header.type == tarfile.XHDTYPE:
+                    if header.size > 65536:
+                        return [failure]
+                    data = stream.read(header.size)
+                    position = 0
+                    while position < len(data):
+                        space = data.find(b' ', position)
+                        if space < 0:
+                            return [failure]
+                        length = int(data[position:space])
+                        end = position + length
+                        if end > len(data) or end <= space + 1 or data[end-1:end] != b'\n':
+                            return [failure]
+                        key, separator, value = data[space+1:end-1].partition(b'=')
+                        if not separator or key not in (b'path', b'mtime') or issues('archive-metadata', value):
+                            return [failure]
+                        if key == b'mtime' and not re.fullmatch(rb'-?\d+(?:\.\d+)?', value):
+                            return [failure]
+                        position = end
+                    if len(data) != header.size:
+                        return [failure]
+                else:
+                    stream.seek(header.size, 1)
+                stream.seek((-header.size) % 512, 1)
+    except (OSError, EOFError, ValueError, UnicodeError, tarfile.TarError, zlib.error):
+        return [failure]
 
 
 def issues(name, data):
@@ -180,8 +260,10 @@ def main():
                     if not info.is_dir():
                         failures.extend(issues(info.filename, archive.read(info)))
         elif package.name.endswith(".tar.gz"):
+            failures.extend(tar_metadata_issues(package))
             with tarfile.open(package) as archive:
                 for info in archive.getmembers():
+                    failures.extend(issues(info.name, b''))
                     if info.isfile():
                         failures.extend(
                             issues(info.name, archive.extractfile(info).read())

@@ -39,9 +39,17 @@ There is no automatic retention purge across all those locations. If you require
 permanent erasure, stop collection and account for every archive, blob, backup,
 key copy and original; reinitializing one database does not erase other copies.
 
-No telemetry service is built into this bridge. User-configured Canvas APIs,
-SSH hosts, optional local Ollama, phone upload routes, and MCP clients are the
-explicit integrations. Stdio readers need no network listener. Receiver HTTP
+No telemetry service is built into this bridge. Explicit integrations include
+user-configured Canvas APIs, SSH hosts, local Ollama, phone upload routes, MCP
+clients, Instagram Saved collection and anonymous media downloads, and optional
+OpenAI enrichment. OpenAI sign-in uses `auth.openai.com`; configured enrichment
+requests send selected source input to `api.openai.com/v1/responses` with
+`store=false`. Location enrichment can include place/context evidence; Voice
+Memos enrichment can include transcript text. Smart Drive search sends bounded
+allowed filename/folder/tag/date metadata; file excerpts are returned locally.
+Encrypted local storage and caching do not make provider processing local.
+Review the applicable provider policy before enabling these optional consumers.
+Stdio readers need no network listener. Receiver HTTP
 ports are loopback-only and still require tokens/passwords. Supply HTTPS/private
 transport rather than exposing the HTTP endpoints directly.
 
@@ -56,6 +64,8 @@ Before contributing or publishing a fork:
   the checker always checks the Git index as well as working files and packages.
   Optionally provide a local denylist through `PERSONAL_CONTEXT_PRIVATE_MARKERS`
   (newline-separated strings); the checker reports paths/line numbers, not values.
+- Distribution archive ownership must be neutral, including header metadata;
+  content scanning alone cannot detect an identifying build account.
 - Use synthetic examples, a public-safe Git author identity, and a fresh history
   when extracting private software. Existing commits can retain deleted files.
 - GitHub secret scanning cannot identify every name, conversation, location or

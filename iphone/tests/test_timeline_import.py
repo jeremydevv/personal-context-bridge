@@ -95,7 +95,7 @@ class TimelineImportTest(unittest.TestCase):
         try:
             from sqlcipher3 import dbapi2 as cipher
         except ImportError:
-            self.skipTest("SQLCipher is installed on ubuntu-box")
+            self.skipTest("SQLCipher is installed on archive-server")
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "travel.sqlite3")
             key = os.urandom(32)

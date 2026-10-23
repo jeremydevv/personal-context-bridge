@@ -4,7 +4,7 @@
 
 **Goal:** Expose guarded native-tag retrieval and narrowly scoped writes.
 
-**Architecture:** A Mac receiver checks tags on open file descriptors, rejects identification and protected ancestors, and performs exclusive native moves. Ubuntu exposes bounded typed tools and shared subscription reranking without a Rclone data fallback.
+**Architecture:** A Mac receiver checks tags on open file descriptors, rejects protected tags and ancestors, and performs exclusive native moves. Ubuntu exposes bounded typed tools and shared subscription reranking without a Rclone data fallback.
 
 **Tech Stack:** Python, Darwin native xattrs/exclusive rename, MCP, existing encrypted subscription adapter.
 
@@ -39,8 +39,6 @@ Interfaces: Drive().list/search/info/chunk/text/segments/write/smart; private fi
 
 ### Task 3: Publish and prepare
 Files: docs/ICLOUD-DRIVE.md, .github/workflows/ci.yml; private runtime, plugin and project handoff.
-- [ ] Document native deployment, permissions and offline behavior; mark native installation pending while Mac offline.
+- [ ] Document native deployment, permissions and offline behavior; document unverified native installation as pending.
 - [ ] Fresh review, local checks, development publish, exact CI including Mac fixture checks.
 - [ ] Install Ubuntu modules, verify actual stdio catalog and blocked unauthenticated operations; update same private plugin and project notes.
-
-Execution ruling: implement inline under the user's explicit setup authorization, without a redundant plan approval. No native user data connection is authorized yet. One fresh whole-change reviewer after implementation.

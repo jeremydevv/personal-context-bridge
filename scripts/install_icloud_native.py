@@ -23,5 +23,5 @@ if not config.exists():
     fd=os.open(config,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
     with os.fdopen(fd,'w') as out:
         json.dump({'enabled':False,'permission':'writer','root':str(Path.home()/'Library/Mobile Documents/com~apple~CloudDocs'),
-                   'segments':{'drive':''}},out,indent=2)
+                   'segments':{'drive':''},'protected_tags':[]},out,indent=2)
 print('Native endpoint prepared; connection remains disabled. No iCloud files inspected.')

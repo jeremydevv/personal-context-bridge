@@ -37,7 +37,7 @@ class EpisodeTests(unittest.TestCase):
             with patch("personal_context.cli.require_archive_key"), \
                  patch("personal_context.episodes.LocalOllamaSummarizer", return_value=summarize), \
                  patch("sys.stdout", new_callable=io.StringIO):
-                status = main(["--db", str(db), "--days", "2"])
+                status = main(["--db", str(db), "--days", "2", "--timezone", "America/New_York"])
             self.assertEqual(1, status)
             store = Store(db)
             self.assertEqual([], store.episode_parts(bad_day.isoformat(), "America/New_York"))
@@ -79,7 +79,7 @@ class EpisodeTests(unittest.TestCase):
         self.assertEqual(1, builder.sync_day("2026-09-30"))
         self.assertEqual(0, builder.sync_day("2026-09-30"))
         self.assertEqual(1, len(calls))
-        result = QueryService(self.path).daily_summary("2026-09-30")
+        result = QueryService(self.path).daily_summary("2026-09-30", "America/New_York")
         self.assertEqual("Discussed prototype milestones.", result["parts"][0]["summary"])
         self.assertEqual(["message:m1"], result["parts"][0]["citations"])
         self.assertTrue(result["generated_unverified"])
@@ -113,7 +113,30 @@ class EpisodeTests(unittest.TestCase):
             "summary": "Synthetic topics were discussed.",
             "citations": [item["key"] for item in items]}, model="synthetic")
         self.assertEqual(1, builder.sync_day("2026-09-30"))
-        self.assertEqual(16, len(self.store.episode_parts("2026-09-30", "America/New_York")[0]["citations"]))
+        self.assertEqual(16, len(self.store.episode_parts("2026-09-30", builder.timezone_name)[0]["citations"]))
+
+    def test_generator_and_reader_share_private_timezone_configuration(self):
+        import os
+        with patch.dict(os.environ, {"PERSONAL_CONTEXT_TIMEZONE": "Asia/Tokyo"}):
+            builder = EpisodeBuilder(self.store, lambda items: {
+                "summary": "Synthetic discussion", "citations": ["message:m1"]})
+            builder.sync_day("2026-10-01")
+            result = QueryService(self.path).daily_summary("2026-10-01")
+            self.assertEqual("Asia/Tokyo", result["timezone"])
+            self.assertEqual(1, len(result["parts"]))
+            self.assertEqual("UTC", EpisodeBuilder(self.store, None, timezone_name="UTC").timezone_name)
+
+    def test_timezone_defaults_to_utc_and_invalid_setting_fails(self):
+        import os
+        from personal_context.settings import configured_timezone
+        from zoneinfo import ZoneInfoNotFoundError
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual("UTC", configured_timezone())
+        with patch.dict(os.environ, {"PERSONAL_CONTEXT_TIMEZONE": "Not/AZone"}):
+            with self.assertRaises(ZoneInfoNotFoundError):
+                EpisodeBuilder(self.store, None)
+            with self.assertRaises(ZoneInfoNotFoundError):
+                QueryService(self.path).daily_summary("2026-09-30")
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ from pathlib import Path
 from .canvas_resources import CANVAS_KINDS
 
 from .store import Store
+from .settings import configured_timezone
 
 
 def _utc_timestamp(value):
@@ -217,7 +218,8 @@ class QueryService:
         """Aggregate freshness and coverage without returning personal content."""
         return self._use(lambda store: store.health())
 
-    def daily_summary(self, day, timezone_name="America/New_York"):
+    def daily_summary(self, day, timezone_name=None):
+        timezone_name = configured_timezone(timezone_name)
         if date.fromisoformat(day).isoformat() != day:
             raise ValueError("day must be YYYY-MM-DD")
         def run(store):

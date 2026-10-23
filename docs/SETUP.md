@@ -1,5 +1,11 @@
 # Connect your own sources
 
+Daily episode generation and summary queries use `PERSONAL_CONTEXT_TIMEZONE`
+from private process configuration, with UTC as the portable default. An explicit
+`--timezone` or query argument overrides it. When updating an existing installation,
+configure its existing IANA timezone for both generation and queries to preserve
+local day boundaries and access to previously generated summaries.
+
 Start with the [fictional quickstart](../README.md#quickstart), then choose a
 [resource-specific README](../README.md#pick-your-sources). For an individual call,
 use the [linked MCP tool directory](TOOLS.md). Each tool has its own README and

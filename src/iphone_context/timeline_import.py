@@ -1,7 +1,7 @@
 """Stream a Google Maps on-phone Timeline export into the encrypted travel archive.
 
 The input is read from stdin so an export can be piped over SSH without a
-plaintext copy on ubuntu-box. Only the phone JSON format with semanticSegments
+plaintext copy on archive-server. Only the phone JSON format with semanticSegments
 is accepted; other Takeout formats need a separate parser.
 """
 

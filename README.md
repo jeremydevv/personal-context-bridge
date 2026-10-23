@@ -25,6 +25,22 @@
   <a href="CONTRIBUTING.md">Contribute</a>
 </p>
 
+## Set up with your AI
+
+> **Copy this prompt into a coding agent with terminal access to your computer.**
+> It can handle installation and guide you through connecting your own sources.
+
+```text
+Set up https://github.com/jeremydevv/personal-context-bridge for me: read its current README, docs/SETUP.md and docs/PRIVACY.md, check my platform, clone or safely update the development branch without overwriting local changes, install supported dependencies, keep credentials and encrypted runtime data outside the checkout, ask which sources I want, guide me through their supported authentication and device permissions using real setup links where available, configure my MCP client and supported sync jobs, and verify each selected source with a successful read and its latest collection time; explain anything blocked, and show me how to check for and safely apply future updates while preserving my configuration and archive. Never ask me to paste credentials into chat.
+```
+
+The agent follows the current repository instructions, so this prompt stays small
+as setup improves. Installation currently uses the CLI and source-specific guides;
+a unified browser setup wizard and automatic updater are not implemented yet.
+Source connections require your consent, and some need macOS or phone permissions.
+ChatGPT web alone cannot install local software; connect an installation through
+[the ChatGPT setup guide](docs/CHATGPT.md), or use a local coding agent first.
+
 Your notes, calendar, messages and saved ideas already tell a story. This project
 helps an MCP client find the relevant pieces, read the original evidence, and
 check when each source was last collected.

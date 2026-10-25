@@ -24,6 +24,10 @@ Use your installation’s absolute interpreter path and this module in the MCP c
 
 Configure the environment from the detailed setup guide. Standard archive surfaces use `PERSONAL_CONTEXT_DB` and `PERSONAL_CONTEXT_KEY_FILE`; Health/travel and Obsidian use their own documented environment. Prefer the generated private `mcp.json` or [configuration example](../../../examples/mcp.example.json). The stdio command speaks JSON-RPC to a client. For ChatGPT web, use [your own authenticated tunnel](../../CHATGPT.md).
 
+## Refresh tracking
+
+The [common refresh tools](../../tools/request_data_refresh/README.md) return durable request IDs. Read `data_refresh_status` for correlated archive acknowledgement; a later unrelated timestamp is not proof that a request completed. Source status tools preserve timestamps and add tracking. Read status is available without enabling refresh actions.
+
 ## Tools
 
 - [`apple_contact_activity`](../../tools/apple_contact_activity/README.md)

@@ -4,6 +4,16 @@ Every tool name links to its own README. Each page points to the resource-specif
 
 [Back to project](../README.md) · [Source setup](SETUP.md) · [Privacy](PRIVACY.md)
 
+## Common refresh tracking
+
+Available on the main and source MCP surfaces. Read tools appear by default; requests require explicit refresh opt-in. Source connectors enforce their existing source scope. Health/location push timing, historical Timeline imports, iCloud authentication and generated summaries retain their separate capabilities.
+
+| Tool | Access |
+| --- | --- |
+| [`request_data_refresh`](tools/request_data_refresh/README.md) | Action / opt-in |
+| [`data_refresh_status`](tools/data_refresh_status/README.md) | Read |
+| [`data_source_status`](tools/data_source_status/README.md) | Read |
+
 ## Personal context
 
 [Set up and sync Personal context](resources/context/README.md)

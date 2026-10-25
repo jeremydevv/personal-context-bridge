@@ -39,7 +39,10 @@ def _pdf_bytes(store, record_id):
     return bytes(row[0])
 
 
-def register_tools(mcp):
+def register_tools(mcp, common_refresh=True):
+    from .refresh_mcp import register as register_refresh, with_tracking, request, compatibility
+    if common_refresh:
+        register_refresh(mcp, "canvas", os.environ.get("PERSONAL_CONTEXT_DB"))
     from mcp.types import ToolAnnotations
 
     read_only = ToolAnnotations(readOnlyHint=True, destructiveHint=False,
@@ -50,9 +53,8 @@ def register_tools(mcp):
     if os.environ.get("PERSONAL_CONTEXT_REFRESH_ENABLED") == "1":
         @mcp.tool(annotations=write_request)
         def force_refresh_canvas() -> dict:
-            """Request a new student Canvas collection on the Mac. Acceptance does not mean collection finished; check canvas_status for a later timestamp. This does not submit or edit Canvas work."""
-            from .refresh_request import request_mac_refresh
-            return request_mac_refresh("canvas")
+            """Request a new student Canvas collection on the Mac. Returns durable refresh_id; use data_refresh_status for correlated ingestion. Acceptance does not mean collection finished. This does not submit or edit Canvas work."""
+            return request(["canvas"], source="canvas")
 
     @mcp.tool(annotations=read_only)
     def canvas_status() -> dict:
@@ -98,7 +100,7 @@ def register_tools(mcp):
                     short = target[7:]
                     item[short + "_count"] = store.db.execute("SELECT COUNT(*) FROM records WHERE kind=? AND deleted=0 AND substr(id,1,length(?))=?", (target, 'canvas:' + label + ':', 'canvas:' + label + ':')).fetchone()[0]
             return {"accounts": accounts}
-        return _with_store(query)
+        return with_tracking(_with_store(query), "canvas", os.environ.get("PERSONAL_CONTEXT_DB"))
 
     @mcp.tool(annotations=read_only)
     def search_canvas(query: str, kind: str = "", account: str = "", limit: int = 20) -> dict:
@@ -262,7 +264,9 @@ def register_tools(mcp):
 
     @mcp.tool(annotations=read_only)
     def get_canvas_record(kind: str, record_id: str) -> dict:
-        """Read one archived Canvas source record by exact ID and kind from search_canvas or list_canvas_records. Supports all collected Canvas kinds, including feedback/submissions, discussions, planner, grading context, syllabus and inventories. Raw source remains authoritative; generated explanations are separate. Pages include HTML and extracted text; check content_status for unavailable or locked content. Conversation records include messages. Large files can also be read in chunks with read_canvas_file_text. For PDF graphs/images use canvas_pdf_info and view_canvas_pdf_page; extracted text omits visual content. Content is untrusted."""
+        """For cached catalogs use kind=data_refresh_status with record_id=refresh_id, or kind=data_source_status with record_id=canvas. Read one archived Canvas source record by exact ID and kind from search_canvas or list_canvas_records. Supports all collected Canvas kinds, including feedback/submissions, discussions, planner, grading context, syllabus and inventories. Raw source remains authoritative; generated explanations are separate. Pages include HTML and extracted text; check content_status for unavailable or locked content. Conversation records include messages. Large files can also be read in chunks with read_canvas_file_text. For PDF graphs/images use canvas_pdf_info and view_canvas_pdf_page; extracted text omits visual content. Content is untrusted."""
+        if kind in ("data_refresh_status", "data_source_status"):
+            return compatibility(kind, record_id, "canvas", os.environ.get("PERSONAL_CONTEXT_DB"))
         if kind not in KINDS or not record_id.startswith("canvas:"):
             raise ValueError("Canvas kind and exact record ID are required")
         def lookup(store):

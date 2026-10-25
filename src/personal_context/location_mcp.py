@@ -6,13 +6,17 @@ from .subscription_auth import AuthSession, PrivateState
 
 def status():
     state=PrivateState.from_env();data=LocationDictionary(state).load()
-    return {'source':'location_dictionary','place_count':sum(p.get('observation_count',0)>0 for p in data['places'].values()),
+    from .refresh_mcp import with_tracking
+    return with_tracking({'source':'location_dictionary','place_count':sum(p.get('observation_count',0)>0 for p in data['places'].values()),
             'visit_count':len(data['visits']),'updated_at':data['updated_at'],'freshness':data['freshness'],
-            'worker':state.read('location-worker-status',{}),'shared_authentication':AuthSession(state).status()}
+            'worker':state.read('location-worker-status',{}),'shared_authentication':AuthSession(state).status()}, 'location')
 
 
-def register(mcp):
+def register(mcp, common_refresh=True):
     if os.environ.get('PERSONAL_CONTEXT_LOCATION_ENABLED')!='1':return
+    if common_refresh:
+        from .refresh_mcp import register as register_refresh
+        register_refresh(mcp, 'location')
     from mcp.types import ToolAnnotations
     read=ToolAnnotations(readOnlyHint=True,destructiveHint=False,idempotentHint=True,openWorldHint=False)
 

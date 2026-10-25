@@ -62,15 +62,18 @@ class McpIntegrationTests(unittest.IsolatedAsyncioTestCase):
             server = StdioServerParameters(
                 command=sys.executable,
                 args=["-m", "personal_context.mcp_server"],
-                env={**os.environ, "PERSONAL_CONTEXT_DB": str(database),
-                     "PERSONAL_CONTEXT_KEY_FILE": str(key_file)},
+                env={**os.environ, "PYTHONPATH":str(Path(__file__).resolve().parents[1]/"src"),
+                     "PERSONAL_CONTEXT_REFRESH_ENABLED":"0", "PERSONAL_CONTEXT_DB": str(database),
+                     "PERSONAL_CONTEXT_KEY_FILE": str(key_file),
+                     "PERSONAL_CONTEXT_REFRESH_DIR":str(Path(directory)/"refresh-state")},
             )
             async with stdio_client(server) as (reader, writer):
                 async with ClientSession(reader, writer) as session:
                     await session.initialize()
                     tools = await session.list_tools()
                     names = {tool.name for tool in tools.tools}
-                    self.assertEqual({"search_personal_context", "get_personal_record",
+                    self.assertEqual({"data_refresh_status", "data_source_status",
+                                      "search_personal_context", "get_personal_record",
                                       "upcoming_personal_events", "personal_context_timeline",
                                       "open_personal_reminders",
                                       "personal_context_status",

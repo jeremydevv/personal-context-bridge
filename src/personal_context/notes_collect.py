@@ -54,6 +54,32 @@ def parse_notes_snapshot(value, collected_at, limit=50000):
 
 
 def collect_notes(command="/usr/bin/osascript", limit=50000):
+    from .headless_collect import adapter_options
+    options = adapter_options("notes")
+    if options["mode"] == "database":
+        from .notes_database import consistent_snapshot, database_snapshot, legacy_database_snapshot
+        database = options.get("database")
+        if not isinstance(database, str) or not Path(database).is_absolute():
+            raise ValueError("database Notes needs an explicit absolute database path")
+        with consistent_snapshot(database) as snapshot:
+            value = database_snapshot(snapshot, limit)
+        legacy = options.get("legacy_database")
+        existing_legacy = Path.home() / "Library/Containers/com.apple.Notes/Data/Library/Notes/NotesV7.storedata"
+        if existing_legacy.exists() and not legacy:
+            raise ValueError("database Notes requires explicit legacy_database to preserve all account coverage")
+        if legacy:
+            if not isinstance(legacy, str) or not Path(legacy).is_absolute():
+                raise ValueError("legacy Notes database must be an explicit absolute path")
+            with consistent_snapshot(legacy) as snapshot:
+                old = legacy_database_snapshot(snapshot, limit)
+            value["notes"].extend(old["notes"])
+            value["count"] += old["count"]
+            value["missingBodies"] += old["missingBodies"]
+        timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        batches, counts = parse_notes_snapshot(value, timestamp, limit)
+        counts["replica_freshness"] = "unknown"
+        counts["legacy_body_format"] = "textutil-with-original-html" if legacy else None
+        return batches, counts
     with collected_app("Notes", command):
         result = subprocess.run([command, "-l", "JavaScript", str(SCRIPT)],
                                 capture_output=True, text=True, timeout=900)

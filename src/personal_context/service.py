@@ -196,7 +196,8 @@ class QueryService:
         return output.getvalue()
 
     def status(self):
-        return self._use(lambda store: {
+        from .refresh_mcp import with_tracking
+        result = self._use(lambda store: {
             "calendar_last_synced_at": store.last_sync("calendar"),
             "reminder_last_synced_at": store.last_sync("reminder"),
             "contact_last_synced_at": store.last_sync("contact"),
@@ -213,6 +214,8 @@ class QueryService:
             "canvas_file_last_synced_at": store.last_sync("canvas_file"),
             "canvas_conversation_last_synced_at": store.last_sync("canvas_conversation"),
         })
+
+        return with_tracking(result, database=self.database_path)
 
     def health(self):
         """Aggregate freshness and coverage without returning personal content."""

@@ -231,8 +231,10 @@ class Store:
 
     @staticmethod
     def _validate(batch):
-        if batch.get("schema") != 1 or batch.get("source") not in ("apple-pim", "apple-local", "canvas-lms"):
+        if batch.get("schema") != 1 or batch.get("source") not in ("apple-pim", "apple-local", "canvas-lms", "provider-imap"):
             raise ValueError("unsupported batch schema or source")
+        if batch.get('source') == 'provider-imap' and (batch.get('kind') != 'mail' or batch.get('complete') is not False):
+            raise ValueError('provider Mail requires non-destructive mail batches')
         if batch.get("kind") not in ("calendar", "reminder", "contact", "mail", "message", "note", "voice_memo", "inventory", *CANVAS_KINDS):
             raise ValueError("unsupported record kind")
         if (batch["source"] == "canvas-lms") != (batch["kind"] in CANVAS_KINDS):
@@ -271,10 +273,33 @@ class Store:
         Store._canvas_window(batch)
 
     def ingest(self, batch):
+        """Return an invocation-owned receipt only after the archive commit."""
+        import hashlib
+        tracking = batch.get("refresh")
+        if tracking is not None:
+            if (not isinstance(tracking, dict) or set(tracking) != {"refresh_id", "attempt_id", "batch_id", "source"}
+                    or any(not isinstance(tracking[k], str) or not re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", tracking[k]) for k in tracking)):
+                raise ValueError("invalid refresh envelope")
+            kind_source = 'canvas' if batch.get('source') == 'canvas-lms' else batch.get('scope') if batch.get('kind') == 'inventory' else batch.get('kind')
+            if kind_source != tracking['source']: raise ValueError('refresh source mismatch')
+            self.db.execute("CREATE TABLE IF NOT EXISTS refresh_receipts(batch_id TEXT PRIMARY KEY, attempt_id TEXT NOT NULL, refresh_id TEXT NOT NULL, source TEXT NOT NULL, digest TEXT NOT NULL)")
+            digest = hashlib.sha256(json.dumps(batch, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+            old = self.db.execute("SELECT digest FROM refresh_receipts WHERE batch_id=?", (tracking['batch_id'],)).fetchone()
+            if old and old['digest'] != digest: raise ValueError("refresh batch identity reused")
+            if old: return dict(tracking, committed=True)
+        receipt = (tracking['batch_id'],tracking['attempt_id'],tracking['refresh_id'],tracking['source'],digest) if tracking is not None else None
+        self._ingest_batch(batch, receipt)
+        return dict(tracking, committed=True) if tracking is not None else None
+
+    def _write_refresh_receipt(self, receipt):
+        if receipt is not None:
+            self.db.execute("INSERT INTO refresh_receipts VALUES(?,?,?,?,?)", receipt)
+
+    def _ingest_batch(self, batch, receipt=None):
         self._validate(batch)
         batch = _calendar_quarantine(batch, self.path.parent / "calendar-quarantine.json")
         if batch["kind"] == "inventory":
-            return self._ingest_inventory(batch)
+            return self._ingest_inventory(batch, receipt)
         kind, source, scope, timestamp = (batch[key] for key in ("kind", "source", "scope", "collected_at"))
         window = _calendar_window(batch) or self._canvas_window(batch)
         incoming = set()
@@ -283,6 +308,7 @@ class Store:
                 SELECT collected_at FROM syncs WHERE source=? AND kind=? AND scope=?
             """, (source, kind, scope)).fetchone()
             if prior and datetime.fromisoformat(timestamp.replace("Z", "+00:00")) < datetime.fromisoformat(prior[0].replace("Z", "+00:00")):
+                self._write_refresh_receipt(receipt)
                 return
             for item in batch["records"]:
                 record_id = item["id"]
@@ -416,6 +442,21 @@ class Store:
                 INSERT INTO syncs(source,kind,scope,collected_at,count) VALUES(?,?,?,?,?)
                 ON CONFLICT(source,kind,scope) DO UPDATE SET collected_at=excluded.collected_at,count=excluded.count
             """, (source, kind, scope, timestamp, len(batch["records"])))
+            self._write_refresh_receipt(receipt)
+
+    def verify_refresh_result(self, metadata, result):
+        """Compare the exact invocation manifest with committed archive receipts."""
+        if not isinstance(metadata, dict) or set(metadata) != {'refresh_id','attempt_id','source'}:
+            raise ValueError('invalid refresh result identity')
+        if any(not isinstance(v,str) or not re.fullmatch('[a-zA-Z0-9_-]{1,64}',v) for v in metadata.values()):
+            raise ValueError('invalid refresh result identity')
+        self.db.execute("CREATE TABLE IF NOT EXISTS refresh_receipts(batch_id TEXT PRIMARY KEY, attempt_id TEXT NOT NULL, refresh_id TEXT NOT NULL, source TEXT NOT NULL, digest TEXT NOT NULL)")
+        rows=self.db.execute("SELECT batch_id FROM refresh_receipts WHERE refresh_id=? AND attempt_id=? AND source=?",(metadata['refresh_id'],metadata['attempt_id'],metadata['source'])).fetchall()
+        committed={row['batch_id'] for row in rows}
+        expected=result.get('batch_ids',[])
+        if not isinstance(expected,list) or any(not isinstance(v,str) for v in expected): raise ValueError('invalid manifest')
+        if set(expected)!=committed: raise ValueError('archive_manifest_mismatch')
+        return dict(result,acked_batch_ids=sorted(committed),archive_verified=True)
 
     def rebuild_record_identifiers(self):
         """Rebuild the derived index in one transaction; a failure rolls back all changes."""
@@ -465,7 +506,7 @@ class Store:
                 "last_synced_at": {kind: self.last_sync(kind) for kind in ("contact", "mail", "message")},
                 "results": ordered}
 
-    def _ingest_inventory(self, batch):
+    def _ingest_inventory(self, batch, receipt=None):
         if not batch["complete"]:
             raise ValueError("source inventory must be complete")
         source, kind, timestamp = batch["source"], batch["scope"], batch["collected_at"]
@@ -475,6 +516,7 @@ class Store:
                 SELECT collected_at FROM inventory_scans WHERE source=? AND kind=?
             """, (source, kind)).fetchone()
             if previous and datetime.fromisoformat(timestamp.replace("Z", "+00:00")) < datetime.fromisoformat(previous[0].replace("Z", "+00:00")):
+                self._write_refresh_receipt(receipt)
                 return
             old = {row["source_id"]: row["active"] for row in self.db.execute("""
                 SELECT source_id,active FROM source_inventory WHERE source=? AND kind=?
@@ -498,6 +540,7 @@ class Store:
                     collected_at=excluded.collected_at,count=excluded.count,
                     added_count=excluded.added_count,removed_count=excluded.removed_count
             """, (source, kind, timestamp, len(incoming), added, removed))
+            self._write_refresh_receipt(receipt)
 
     def get(self, kind, record_id, include_deleted=False):
         row = self.db.execute("SELECT * FROM records WHERE kind=? AND id=?", (kind, record_id)).fetchone()

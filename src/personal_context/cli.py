@@ -1,6 +1,7 @@
 """Local collection, SSH transfer, and server-side ingest entrypoints."""
 
 import argparse
+import contextlib
 import fcntl
 import json
 import os
@@ -102,7 +103,8 @@ def deliver_ssh(config, payload, timeout=1800):
         "-o", "ConnectionAttempts=1", config["remote_host"], remote_command,
     ], input=payload, capture_output=True, timeout=timeout)
     if result.returncode:
-        raise RuntimeError("remote ingest failed: " + result.stderr.decode(errors="replace")[-500:])
+        raise RuntimeError("remote_ingest_failed")
+    return json.loads(result.stdout)
 
 
 def remote_image_command(config, action, *extra):
@@ -171,6 +173,13 @@ def sync_message_attachments(config, limit=100):
             result = subprocess.run(command, stdin=source, capture_output=True, timeout=3600)
         if result.returncode:
             raise RuntimeError("remote attachment ingest failed: " + result.stderr.decode(errors="replace")[-500:])
+        acknowledgement=json.loads(result.stdout)
+        if (acknowledgement.get('ok') is not True or acknowledgement.get('bytes')!=item['bytes']
+                or not isinstance(acknowledgement.get('sha256'),str)
+                or not re.fullmatch('[a-f0-9]{64}',acknowledgement['sha256'])
+                or not isinstance(acknowledgement.get('object_id'),str)
+                or not re.fullmatch('[a-f0-9]{64}',acknowledgement['object_id'])):
+            raise RuntimeError('attachment_archive_acknowledgement_missing')
         current = item["path"].stat()
         if current.st_size != item["bytes"] or current.st_mtime_ns != item["mtime_ns"]:
             raise RuntimeError("attachment changed during transfer; retry on the next sync")
@@ -311,6 +320,15 @@ def main(argv=None):
     if args.action == "ingest-stdin":
         require_archive_key()
         payload = json.load(sys.stdin)
+        if isinstance(payload, dict) and 'refresh_result' in payload:
+            with ingestion_lock(args.db):
+                store = Store(args.db)
+                try:
+                    verified = store.verify_refresh_result(payload['refresh'], payload['refresh_result'])
+                finally:
+                    store.close()
+            print(json.dumps({'ok': True, 'refresh_result': verified}))
+            return 0
         batches = payload.get("batches") if isinstance(payload, dict) and "batches" in payload else [payload]
         if not isinstance(batches, list) or not batches:
             raise ValueError("ingest requires at least one batch")
@@ -321,11 +339,13 @@ def main(argv=None):
         with ingestion_lock(args.db):
             store = Store(args.db)
             try:
+                receipts = []
                 for batch in batches:
-                    store.ingest(batch)
+                    receipt = store.ingest(batch)
+                    if receipt: receipts.append(receipt)
             finally:
                 store.close()
-        print(json.dumps({"ok": True, "batches": len(batches),
+        print(json.dumps({"ok": True, "receipts": receipts, "batches": len(batches),
                           "count": sum(len(batch["records"]) for batch in batches)}))
         return 0
     if args.action == "status":
@@ -403,6 +423,12 @@ def main(argv=None):
         return 0
 
     config = load_config(args.config)
+    selected_source = os.environ.get('PERSONAL_CONTEXT_REFRESH_SOURCE')
+    if selected_source:
+        from .refresh_worker import source_config
+        config = source_config(config, selected_source)
+    from .headless_collect import configure_headless
+    configure_headless(config)
     if args.action == "image-sync":
         if args.limit < 0:
             raise ValueError("image sync limit must be nonnegative")
@@ -454,12 +480,25 @@ def main(argv=None):
         print(json.dumps({**counts, "batches": len(batches)}))
         return 0
     if args.action in ("mail-sync", "mail-fast-sync"):
+        if config.get('headless', {}).get('mail', {}).get('mode') == 'imap':
+            from .provider_mail import provider_mail_batches
+            timestamp = datetime.now(timezone.utc).isoformat()
+            spool.flush(lambda payload: deliver_ssh(config, payload))
+            for batch in provider_mail_batches(config, timestamp, recent=args.action == 'mail-fast-sync'):
+                spool.enqueue([batch])
+                spool.flush(lambda payload: deliver_ssh(config, payload))
+            return 0
+        local_only = config.get('headless', {}).get('mail', {}).get('mode') == 'local'
+        if os.environ.get('PERSONAL_CONTEXT_REFRESH_HEADLESS') == '1' and not local_only and config.get('headless', {}).get('mail', {}).get('allow_gui_fallback') is not True:
+            raise RuntimeError('provider_mail_unconfigured')
         selected = set(config.get("mailbox_urls", []))
         if not selected and not config.get("all_mailboxes"):
             raise ValueError("select mailboxes before Mail sync")
-        with collected_app("Mail"):
-            request_mail_refresh()
-            wait_for_mail_idle()
+        with (contextlib.nullcontext() if local_only else collected_app("Mail")) as lifecycle:
+            if Spool.tracking and lifecycle is not None: Spool.app_lifecycle = lifecycle
+            if not local_only:
+                request_mail_refresh()
+                wait_for_mail_idle()
             mailboxes = list_mailboxes()
             if selected - {item["mailboxUrl"] for item in mailboxes}:
                 raise ValueError("configured Mail mailbox is unavailable")

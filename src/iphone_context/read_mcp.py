@@ -39,6 +39,9 @@ def run(argv=None):
     source = parser.parse_args(argv).source
     queries = (HealthQueries if source == "health" else TravelQueries)(open_archive(source))
     mcp = FastMCP("apple-" + source)
+    from personal_context.refresh_mcp import register as register_refresh, with_tracking, source_status
+    register_refresh(mcp, "health" if source == "health" else "location",
+                     allowed_sources=("health",) if source == "health" else ("location", "google_timeline"))
     read_only = ToolAnnotations(readOnlyHint=True, destructiveHint=False,
                                 idempotentHint=True, openWorldHint=False)
 
@@ -48,7 +51,7 @@ def run(argv=None):
 
     if source == "health":
         def health_status() -> dict:
-            return queries.status()
+            return with_tracking(queries.status(), "health")
         add("apple_health_status", "Check last iPhone Health receipt and archived sample count. iOS determines actual sync timing; the Mac need not be on.", health_status)
 
         def health_types(limit: int = 100) -> dict:
@@ -80,7 +83,9 @@ def run(argv=None):
         add("read_apple_health_workout_series", "Read up to 200 archived heart-rate or other series points for an exact workout ID from read_apple_health_workouts. Use offset for later pages.", health_workout_series)
     else:
         def travel_status() -> dict:
-            return queries.status()
+            result = with_tracking(queries.status(), "location")
+            result["historical_data_refresh"] = source_status("google_timeline")
+            return result
         add("iphone_travel_status", "Check last OwnTracks receipt, live location count, historical Google Maps Timeline segment count, and last historical import. A live gap can mean iOS delayed background delivery.", travel_status)
 
         def travel_locations(start: str, end: str, limit: int = 200) -> dict:
@@ -101,7 +106,7 @@ def run(argv=None):
 
     if source == "travel":
         from personal_context.location_mcp import register as register_location
-        register_location(mcp)
+        register_location(mcp, common_refresh=False)
     mcp.run(transport="stdio")
 
 

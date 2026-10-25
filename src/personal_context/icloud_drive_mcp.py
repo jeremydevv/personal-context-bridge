@@ -26,7 +26,10 @@ class DriveFilters(BaseModel):
 def values(filters):return filters.model_dump() if filters else {}
 
 
-def register(mcp):
+def register(mcp, common_refresh=True):
+    from .refresh_mcp import register as register_refresh, with_tracking
+    if common_refresh:
+        register_refresh(mcp, "icloud_drive")
     from mcp.types import ToolAnnotations
     read=ToolAnnotations(readOnlyHint=True,destructiveHint=False,idempotentHint=True,openWorldHint=True)
     write=ToolAnnotations(readOnlyHint=False,destructiveHint=False,idempotentHint=False,openWorldHint=True)
@@ -35,7 +38,7 @@ def register(mcp):
     @mcp.tool(annotations=read)
     def icloud_drive_status(probe: bool=False) -> dict:
         """Check setup without credentials. Native Finder-tag verification is mandatory for every file operation; no Rclone data fallback. probe=true checks the Mac receiver and an allowed listing. Receiver installation, enabled connection and local Apple authentication are separate readiness steps."""
-        return Drive().status(probe)
+        return with_tracking(Drive().status(probe), "icloud_drive")
 
     @mcp.tool(annotations=read)
     def list_icloud_drive_segments() -> dict:

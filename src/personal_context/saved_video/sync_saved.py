@@ -19,20 +19,47 @@ def stamp():
     return datetime.now(timezone.utc).isoformat()
 
 
+def _outcome(result, complete=False, emit=True, collection_finished=True):
+    outcome = {'result': result, 'collection_finished': collection_finished,
+               'coverage': 'complete' if complete else 'partial',
+               'batch_ids': [], 'acked_batch_ids': [],
+               'error_code': None if complete else result}
+    identity = {key: os.environ.get(env, '') for key, env in (
+        ('refresh_id', 'PERSONAL_CONTEXT_REFRESH_ID'),
+        ('attempt_id', 'PERSONAL_CONTEXT_REFRESH_ATTEMPT'),
+        ('source', 'PERSONAL_CONTEXT_REFRESH_SOURCE'))}
+    if emit and all(identity.values()) and identity['source'] == 'saved_video':
+        print(json.dumps({**identity, **outcome}), flush=True)
+    return outcome
+
+
 def run():
     os.umask(0o077)
     STATE.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    lock = (STATE.parent / "saved-video-sync.lock").open("a")
+    with (STATE.parent / "saved-video-sync.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return _outcome('lock_busy', emit=False, collection_finished=False)
+        # Final receipt is emitted before releasing this invocation's lock.
+        return _run_locked()
+
+
+def _report_identity(path):
     try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        return
+        stat = path.stat()
+        return stat.st_ino, stat.st_mtime_ns, stat.st_size
+    except FileNotFoundError:
+        return None
+
+
+def _run_locked():
     state = json.loads(STATE.read_text()) if STATE.exists() else {}
     state.update(enabled=True, interval_minutes=30, checked_at=stamp())
     if state.get("collection_retry_after", 0) > time.time():
         state["result"] = "collection_cooldown"
         write_json(STATE, state)
-        return
+        return _outcome(state["result"])
     # Neither environment nor stdout carries cookies into the downloader.
     environment = {
         k: os.environ[k]
@@ -60,6 +87,8 @@ def run():
             timeout=360,
         )
         collection = json.loads(result.stdout)
+        if result.returncode != 0 or not isinstance(collection, dict):
+            raise ValueError("collector_process_failed")
     except Exception:
         collection = {
             "ok": False,
@@ -74,7 +103,7 @@ def run():
             + collection.get("cooldown_seconds", 3600),
         )
         write_json(STATE, state)
-        return
+        return _outcome(state["result"])
     state.update(
         last_saved_check_succeeded_at=stamp(),
         collection=collection,
@@ -88,15 +117,17 @@ def run():
     ):
         state["result"] = "processing_cooldown"
         write_json(STATE, state)
-        return
+        return _outcome(state["result"])
     if digest == state.get("processed_allowlist_sha256") and state.get(
         "last_processing_ok"
     ):
         state["result"] = "unchanged"
         write_json(STATE, state)
-        return
+        return _outcome(state["result"], complete=True)
     state["result"] = "processing"
     write_json(STATE, state)
+    report_path = DEFAULT_DATA / "run-report.json"
+    previous_report = _report_identity(report_path)
     try:
         # Only metadata is printed by the processor; do not persist raw exceptions.
         result = subprocess.run(
@@ -106,9 +137,11 @@ def run():
             env=environment,
             timeout=4 * 3600,
         )
-        report = json.loads((DEFAULT_DATA / "run-report.json").read_text())
+        report = json.loads(report_path.read_text())
         ok = (
             result.returncode == 0
+            and _report_identity(report_path) != previous_report
+            and report["total"] == report["complete"]
             and report["failed"] == 0
             and report["allowlist_sha256"] == digest
         )
@@ -123,6 +156,13 @@ def run():
     )
     write_json(STATE, state)
 
+    return _outcome(state["result"], complete=ok)
+
+
+def main():
+    # Console scripts call sys.exit; keep result metadata out of stderr/status.
+    run()
+
 
 if __name__ == "__main__":
-    run()
+    main()

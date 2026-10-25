@@ -20,6 +20,8 @@ def run():
         require_mount=os.environ.get("OBSIDIAN_REQUIRE_MOUNT", "1") == "1",
     )
     mcp = FastMCP("private-obsidian")
+    from .refresh_mcp import register as register_refresh, with_tracking, request
+    register_refresh(mcp, "obsidian")
     read = ToolAnnotations(readOnlyHint=True, destructiveHint=False,
                            idempotentHint=True, openWorldHint=False)
     write = ToolAnnotations(readOnlyHint=False, destructiveHint=False,
@@ -33,14 +35,13 @@ def run():
     @mcp.tool(annotations=read)
     def obsidian_sync_status() -> dict:
         """Check the last successful Ubuntu-to-iCloud vault reconciliation. A missing timestamp means sync has not been established."""
-        return service.sync_status()
+        return with_tracking(service.sync_status(), "obsidian")
 
     if os.environ.get("PERSONAL_CONTEXT_REFRESH_ENABLED") == "1":
         @mcp.tool(annotations=write)
         def force_refresh_obsidian() -> dict:
-            """Request the existing bidirectional iCloud reconciliation for the allowed Obsidian vaults. Acceptance is not completion; check obsidian_sync_status afterward. The sync job applies remote changes under its existing conflict and backup safeguards."""
-            from .refresh_request import request_obsidian_refresh
-            return request_obsidian_refresh()
+            """Request the existing bidirectional iCloud reconciliation for the allowed Obsidian vaults. Returns durable refresh_id; acceptance is not completion. Check data_refresh_status for correlated ingestion. The sync job applies remote changes under its existing conflict and backup safeguards."""
+            return request(["obsidian"], source="obsidian")
 
     @mcp.tool(annotations=read)
     def obsidian_list_files(vault: str = "", directory: str = "",

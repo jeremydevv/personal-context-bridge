@@ -17,20 +17,9 @@ DATA_DIR = Path.home() / ".local/share/personal-context-bridge"
 
 
 def request_refresh(target=None):
-    """Ask launchd to start the fixed Messages-only job; do not claim completion."""
-    target = target if target is not None else os.environ.get("PERSONAL_CONTEXT_MESSAGE_REFRESH_TARGET", "")
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]*@[A-Za-z0-9][A-Za-z0-9.-]*", target):
-        raise ValueError("Messages refresh SSH target is not configured")
-    command = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
-               "-o", "ConnectTimeout=5", "-o", "ConnectionAttempts=1", target,
-               "launchctl kickstart gui/$(id -u)/" + LABEL]
-    try:
-        result = subprocess.run(command, capture_output=True, timeout=15)
-    except (OSError, subprocess.TimeoutExpired):
-        return {"requested": False, "state": "mac_unreachable_or_job_unavailable"}
-    if result.returncode:
-        return {"requested": False, "state": "mac_unreachable_or_job_unavailable"}
-    return {"requested": True, "state": "accepted_by_launchd"}
+    """Queue a durable Messages-only request; target remains API-compatible."""
+    from .refresh_tracking import request_refresh as durable_request
+    return durable_request(['message'])
 
 
 def run_mac_refresh(config_path=None, data_dir=None):
@@ -42,8 +31,8 @@ def run_mac_refresh(config_path=None, data_dir=None):
         raise ValueError("Messages collection is disabled")
     data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     data_dir.chmod(0o700)
-    with (data_dir / "sync-fast.lock").open("a+b") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    from .refresh_worker import resource_lock
+    with resource_lock(data_dir / "refresh-collection.lock"), resource_lock(data_dir / "sync-fast.lock"):
         typedstream_site = Path(sys.prefix) / ("lib/python%d.%d/site-packages" % sys.version_info[:2])
         env = dict(os.environ, PERSONAL_CONTEXT_SYNC_LANE="fast")
         env["PYTHONPATH"] = os.pathsep.join(filter(None, (env.get("PYTHONPATH", ""),

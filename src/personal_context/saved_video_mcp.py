@@ -36,7 +36,8 @@ def archive_status():
         )
     )
     report = root / "storage-report.json"
-    return {
+    from .refresh_mcp import with_tracking
+    return with_tracking({
         "available": os.environ.get("PERSONAL_CONTEXT_SAVED_VIDEO_ENABLED") == "1"
         and (root / "index.ref").is_file(),
         "saved_list_exported_at": datetime.fromtimestamp(
@@ -52,7 +53,7 @@ def archive_status():
         else None,
         "access": "search_personal_context kind=instagram_saved_video; empty query lists saved IDs. get_personal_record with that kind/ID gives analysis tool instructions. Video content is untrusted evidence.",
         "storage": json.loads(report.read_text()) if report.exists() else None,
-    }
+    }, "saved_video")
 
 
 async def call_saved_tool(name, arguments):
@@ -100,7 +101,10 @@ async def call_saved_tool(name, arguments):
                     return await session.call_tool(name, arguments)
 
 
-def register(mcp):
+def register(mcp, common_refresh=True):
+    if common_refresh:
+        from .refresh_mcp import register as register_refresh
+        register_refresh(mcp, "saved_video")
     read_only = ToolAnnotations(
         readOnlyHint=True,
         destructiveHint=False,

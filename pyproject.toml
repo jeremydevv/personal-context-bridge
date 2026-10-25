@@ -25,10 +25,10 @@ personal-context-apple-writes = "personal_context.apple_write_worker:main"
 personal-context-setup = "personal_context.onboarding:main"
 personal-context-canvas = "personal_context.canvas_collect:main"
 personal-context = "personal_context.cli:entrypoint"
-personal-context-saved-sync = "personal_context.saved_video.sync_saved:run"
+personal-context-saved-sync = "personal_context.saved_video.sync_saved:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-personal_context = ["notes_snapshot.js", "contacts_snapshot.js"]
+personal_context = ["notes_snapshot.js", "contacts_snapshot.js", "contacts_native.m"]

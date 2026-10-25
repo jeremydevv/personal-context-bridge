@@ -57,6 +57,25 @@ def parse_contacts_snapshot(value, collected_at, limit=50000):
 
 
 def collect_contacts_snapshot(command="/usr/bin/osascript", limit=50000):
+    from .headless_collect import adapter_options
+    options = adapter_options("contacts")
+    if options["mode"] == "native":
+        helper = options.get("helper")
+        if not isinstance(helper, str) or not Path(helper).is_absolute():
+            raise ValueError("native Contacts needs an absolute signed helper path")
+        result = subprocess.run([helper], capture_output=True, text=True, timeout=900)
+        if result.returncode:
+            raise RuntimeError("native Contacts unavailable; grant Contacts permission to the configured helper")
+        try:
+            value = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            raise ValueError("native Contacts returned malformed data") from None
+        from .contacts_native import supplement_contact_notes
+        value = supplement_contact_notes(value, options.get("note_databases"))
+        timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        batches, counts = parse_contacts_snapshot(value, timestamp, limit)
+        counts.update(adapter="native-with-note-replica", replica_freshness="unknown")
+        return batches, counts
     with collected_app("Contacts", command):
         result = subprocess.run([command, "-l", "JavaScript", str(SCRIPT)],
                                 capture_output=True, text=True, timeout=900)

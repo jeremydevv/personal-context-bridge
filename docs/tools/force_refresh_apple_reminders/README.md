@@ -2,7 +2,7 @@
 
 [All MCP tools](../../TOOLS.md) · [Apple Reminders setup and sync](../../resources/reminder/README.md)
 
-Request the Mac's fast Apple collection now. The job may also refresh other Apple sources. Acceptance is not completion; check this source's status for a later archive timestamp. No Apple record is sent, edited, or marked read.
+Queue a durable refresh request for this connector’s source (configured enabled sources on the main connector). Returns `refresh_id`; use `data_refresh_status` for correlated archive acknowledgement. Acceptance and later unrelated timestamps do not prove completion. Existing source scopes and native write permissions remain unchanged.
 
 ## Set up and sync
 
@@ -20,7 +20,7 @@ force_refresh_apple_reminders() -> dict
 
 ## Enable and verify the action
 
-This optional action requires its documented private configuration and client approval policy. Read the resource guide before enabling it. A refresh request reports acceptance; check a later source timestamp for completion. A queued native write needs a completed receipt and native readback. Do not automatically retry an uncertain write.
+This optional action requires its documented private configuration and client approval policy. Read the resource guide before enabling it. A refresh request returns a durable `refresh_id` and reports acceptance; use `data_refresh_status(refresh_id)` for correlated archive acknowledgement. A later unrelated timestamp is not completion evidence. A queued native write needs a completed receipt and native readback. Do not automatically retry an uncertain write.
 
 ## Implementation
 

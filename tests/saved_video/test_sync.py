@@ -25,7 +25,8 @@ def test_sync_separates_credentials_and_skips_processing_unchanged_snapshot(
             )
         assert len(calls) == 2
         (data / "run-report.json").write_text(
-            json.dumps({"failed": 0, "allowlist_sha256": "fictional-digest"})
+            json.dumps({"failed": 0, "total": 1, "complete": 1,
+                        "allowlist_sha256": "fictional-digest"})
         )
         return SimpleNamespace(returncode=0)
 

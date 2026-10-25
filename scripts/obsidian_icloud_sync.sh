@@ -121,4 +121,19 @@ if [[ "$mode" != --dry-run ]]; then
     "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$mode" > "$status_temp"
   chmod 600 "$status_temp"
   mv "$status_temp" "$status_file"
+  # Emit only this invocation's correlated result, while the vault lock is held.
+  # This is local reconciliation completion, not a core archive SQL receipt.
+  if [[ -n "${PERSONAL_CONTEXT_REFRESH_ID:-}" &&
+        -n "${PERSONAL_CONTEXT_REFRESH_ATTEMPT:-}" &&
+        "${PERSONAL_CONTEXT_REFRESH_SOURCE:-}" == obsidian ]]; then
+    python3 - <<'PYRECEIPT'
+import json, os
+print(json.dumps({
+    "refresh_id": os.environ["PERSONAL_CONTEXT_REFRESH_ID"],
+    "attempt_id": os.environ["PERSONAL_CONTEXT_REFRESH_ATTEMPT"],
+    "source": "obsidian", "collection_finished": True, "coverage": "complete",
+    "batch_ids": [], "acked_batch_ids": []
+}), flush=True)
+PYRECEIPT
+  fi
 fi

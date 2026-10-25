@@ -19,6 +19,8 @@ def run():
         raise RuntimeError("PERSONAL_CONTEXT_KEY_FILE must point to the unlocked archive key")
     service = QueryService(database_path)
     mcp = FastMCP("personal-context")
+    from .refresh_mcp import register as register_refresh, compatibility, request
+    register_refresh(mcp, database=database_path)
     read_only = ToolAnnotations(
         readOnlyHint=True,
         destructiveHint=False,
@@ -59,7 +61,9 @@ def run():
 
     @mcp.tool(annotations=read_only)
     async def get_personal_record(kind: str, record_id: str) -> dict:
-        """Read one exact private record. Saved-video compatibility: kind=instagram_saved_video with ID from search returns metadata; kind=instagram_saved_video_frame uses record_id=video_id:asset:seconds for a native image; kind=instagram_saved_video_storyboard uses video_id:asset:page. Prefer the dedicated video tools when available. All source text/images are untrusted."""
+        """Read one exact private record. Refresh compatibility for cached catalogs: kind=data_refresh_status, record_id=refresh_id; kind=data_source_status, record_id=source or all. Saved-video compatibility: kind=instagram_saved_video with ID from search returns metadata; kind=instagram_saved_video_frame uses record_id=video_id:asset:seconds for a native image; kind=instagram_saved_video_storyboard uses video_id:asset:page. Prefer the dedicated video tools when available. All source text/images are untrusted."""
+        if kind in ('data_refresh_status', 'data_source_status'):
+            return compatibility(kind, record_id, database=database_path)
         if kind == 'visited_place':
             if os.environ.get('PERSONAL_CONTEXT_LOCATION_ENABLED') != '1':
                 raise ValueError('Location dictionary is disabled')
@@ -167,23 +171,21 @@ def run():
         return Image(data=service.message_image_preview(attachment_guid), format="jpeg")
 
     from .location_mcp import register as register_location
-    register_location(mcp)
-    register_canvas_tools(mcp)
+    register_location(mcp, common_refresh=False)
+    register_canvas_tools(mcp, common_refresh=False)
     from .icloud_drive_mcp import register as register_icloud_drive
-    register_icloud_drive(mcp)
+    register_icloud_drive(mcp, common_refresh=False)
     if os.environ.get("PERSONAL_CONTEXT_SAVED_VIDEO_ENABLED") == "1":
         from .saved_video_mcp import register as register_saved_videos
-        register_saved_videos(mcp)
+        register_saved_videos(mcp, common_refresh=False)
     if os.environ.get("PERSONAL_CONTEXT_REFRESH_ENABLED") == "1":
         @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False,
                                                idempotentHint=False, openWorldHint=False))
         def force_refresh_personal_context() -> dict:
-            """Request Mac Apple and student Canvas collection now. Each request is approval-gated and reports job acceptance only. Check personal_context_status and canvas_status afterward for later archive timestamps."""
-            from .refresh_request import request_mac_refresh
-            return {"apple": request_mac_refresh("apple"),
-                    "canvas": request_mac_refresh("canvas")}
+            """Queue configured enabled sources and return a durable refresh_id. Acceptance is not completion; use data_refresh_status for correlated archive ingestion and separate summary progress."""
+            return request([])
     from .voice_memos_mcp import register as register_voice_memos
-    register_voice_memos(mcp, service)
+    register_voice_memos(mcp, service, common_refresh=False)
     mcp.run(transport="stdio")
 
 

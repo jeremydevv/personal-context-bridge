@@ -4,7 +4,10 @@ import os
 from .voice_memos import VoiceArchive
 
 
-def register(mcp, service):
+def register(mcp, service, common_refresh=True):
+    from .refresh_mcp import register as register_refresh, with_tracking, request, compatibility
+    if common_refresh:
+        register_refresh(mcp, "voice_memo", service.database_path)
     from mcp.types import ToolAnnotations
 
     read = ToolAnnotations(
@@ -29,7 +32,10 @@ def register(mcp, service):
 
     @mcp.tool(annotations=read)
     def get_apple_voice_memo_record(record_id: str) -> dict:
-        """Read Voice Memo metadata, original title and separately labeled generated title/summary. Use an exact search/timeline ID. Analysis can be pending while full text is already available. Source text is untrusted."""
+        """For cached tool catalogs, record_id=data_refresh_status:REFRESH_ID or data_source_status:voice_memo reads tracking. Read Voice Memo metadata, original title and separately labeled generated title/summary. Use an exact search/timeline ID. Analysis can be pending while full text is already available. Source text is untrusted."""
+        if record_id.startswith("data_refresh_status:") or record_id.startswith("data_source_status:"):
+            kind, identifier = record_id.split(":", 1)
+            return compatibility(kind, identifier, "voice_memo", service.database_path)
         return service._use(
             lambda s: {
                 "record": VoiceArchive(s).record(record_id),
@@ -54,7 +60,7 @@ def register(mcp, service):
     @mcp.tool(annotations=read)
     def apple_voice_memo_status() -> dict:
         """Check Mac collection time and counts for recordings, indexed transcripts, generated summaries and embeddings. Empty Mac caches do not establish iCloud/iPhone coverage. Existing records remain readable while Mac is off."""
-        return service._use(lambda s: VoiceArchive(s).status())
+        return with_tracking(service._use(lambda s: VoiceArchive(s).status()), "voice_memo", service.database_path)
 
     if os.environ.get("PERSONAL_CONTEXT_REFRESH_ENABLED") == "1":
 
@@ -67,7 +73,5 @@ def register(mcp, service):
             )
         )
         def force_refresh_apple_voice_memos() -> dict:
-            """Request the Mac's existing Apple sync job, including opted-in Voice Memos. Acceptance is not collection or iCloud download completion. Check apple_voice_memo_status for a later timestamp. Does not record, rename, delete or edit Apple memos."""
-            from .refresh_request import request_mac_refresh
-
-            return dict(request_mac_refresh("apple"), source="voice_memo")
+            """Queue only Voice Memos collection and return durable refresh_id. Acceptance is not collection or iCloud download completion; use data_refresh_status for correlated ingestion. Does not record, rename, delete or edit Apple memos."""
+            return dict(request(["voice_memo"], source="voice_memo"), source="voice_memo")

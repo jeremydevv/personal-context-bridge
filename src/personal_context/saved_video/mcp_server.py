@@ -43,6 +43,9 @@ mcp = FastMCP(
 )
 
 
+from personal_context.refresh_mcp import register as register_refresh
+register_refresh(mcp, "saved_video")
+
 @mcp.tool(annotations=read_only)
 def list_saved_videos() -> list[dict]:
     """List allowlisted Saved videos, processing state, durations and frame counts."""

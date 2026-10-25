@@ -164,7 +164,7 @@ def sync_optional_sources(config, config_path, env, run_command,
     return errors
 
 
-def main(argv=None):
+def _main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--fast", action="store_true", help="recent changes without a full backup")
     args = parser.parse_args(argv)
@@ -275,6 +275,13 @@ def main(argv=None):
         if source_errors:
             raise RuntimeError("Apple source sync failed after archive backup: " + "; ".join(source_errors))
     return 0
+
+
+def main(argv=None):
+    # Share resource ownership with source-only requests, including legacy schedules.
+    from .refresh_worker import resource_lock
+    with resource_lock(DATA_DIR / 'refresh-collection.lock'):
+        return _main(argv)
 
 
 if __name__ == "__main__":

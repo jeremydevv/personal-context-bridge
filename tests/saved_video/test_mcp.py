@@ -144,7 +144,6 @@ def test_mcp_delivers_images_evidence_and_rejects_unlisted_video(tmp_path):
                 "PERSONAL_CONTEXT_KEY_FILE": str(key),
                 "HOME": str(tmp_path),
                 "PERSONAL_CONTEXT_REFRESH_ENABLED": "0",
-                "PERSONAL_CONTEXT_KEY_FILE": str(tmp_path / "missing-fixture.key"),
                 "PERSONAL_CONTEXT_REFRESH_DIR": str(tmp_path / "refresh"),
                 "SAVED_VIDEO_ALLOWLIST": str(urls),
                 "SAVED_VIDEO_DATA": str(data),

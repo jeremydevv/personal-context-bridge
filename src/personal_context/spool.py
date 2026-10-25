@@ -11,6 +11,7 @@ class Spool:
     # One bounded collector invocation owns this manifest, never pending older work.
     tracking = None
     app_lifecycle = None
+    partial_coverage = False
     produced = set()
     acknowledged = set()
 
@@ -19,11 +20,24 @@ class Spool:
         cls.tracking = dict(refresh_id=refresh_id, attempt_id=attempt_id, source=source)
         cls.produced, cls.acknowledged = set(), set()
         cls.app_lifecycle = None
+        cls.partial_coverage = False
 
     @classmethod
     def tracking_result(cls, coverage='complete'):
-        return {'collection_finished': True, 'coverage': coverage,
+        return {'collection_finished': True, 'coverage': 'partial' if cls.partial_coverage else coverage,
                 'batch_ids': sorted(cls.produced), 'acked_batch_ids': sorted(cls.acknowledged)}
+
+    @staticmethod
+    def _canvas_partial(value):
+        """Retain only a coverage bit from provider metadata, never record contents."""
+        if isinstance(value, dict):
+            if any(value.get(key) in ('partial', 'unavailable', 'failed')
+                   for key in ('status', 'content_status', 'extraction_status')):
+                return True
+            return any(Spool._canvas_partial(item) for item in value.values())
+        if isinstance(value, list):
+            return any(Spool._canvas_partial(item) for item in value)
+        return False
 
     def __init__(self, directory):
         self.directory = Path(directory)
@@ -38,6 +52,8 @@ class Spool:
         if not batches:
             return
         if self.tracking:
+            if self.tracking.get('source') == 'canvas' and any(self._canvas_partial(batch) for batch in batches):
+                type(self).partial_coverage = True
             batches = [dict(batch, refresh=dict(self.tracking, batch_id=uuid.uuid4().hex)) for batch in batches]
             self.produced.update(batch['refresh']['batch_id'] for batch in batches)
         payload = batches[0] if len(batches) == 1 else {"schema": 1, "batches": batches}

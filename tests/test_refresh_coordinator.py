@@ -239,3 +239,45 @@ class SourceRuntimeTests(unittest.TestCase):
         job={'refresh_id':'a'*32,'attempt_id':'b'*32,'source':'canvas','mode':'recent'}
         config={'mac_target':'fixture@mac.invalid','mac_python':'/private/default/python','mac_config':'/private/config.json','sources':{'canvas':{'capability':'mac','mac_python':'relative-python'}}}
         with self.assertRaises(ValueError):dispatch(job,config)
+
+class CanvasSpoolCoverageTests(unittest.TestCase):
+    def test_nested_unavailable_canvas_coverage_overrides_outer_success(self):
+        from personal_context.spool import Spool
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            spool=Spool(root);Spool.begin_tracking('a'*32,'b'*32,'canvas')
+            try:
+                batch={'schema':1,'source':'canvas-lms','kind':'canvas_collection_state','scope':'fictional','complete':True,'collected_at':'2026-01-01T00:00:00Z','records':[{'id':'fixture','title':'Coverage','payload':{'features':{'module':{'status':'unavailable'}}}}]}
+                spool.enqueue([batch])
+                spool.flush(lambda payload:{'receipts':[dict(json.loads(payload)['refresh'],committed=True)]})
+                self.assertEqual(Spool.tracking_result()['coverage'],'partial')
+                self.assertEqual(Spool.produced,Spool.acknowledged)
+            finally:Spool.tracking=None
+    def test_coverage_flag_resets_each_invocation_and_ignores_other_sources(self):
+        from personal_context.spool import Spool
+        with tempfile.TemporaryDirectory() as root:
+            spool=Spool(root)
+            Spool.begin_tracking('a'*32,'b'*32,'calendar')
+            try:
+                spool.enqueue([{'schema':1,'source':'apple-pim','kind':'calendar','records':[{'payload':{'status':'unavailable'}}]}])
+                self.assertEqual(Spool.tracking_result()['coverage'],'complete')
+                Spool.begin_tracking('c'*32,'d'*32,'canvas')
+                self.assertEqual(Spool.tracking_result()['coverage'],'complete')
+            finally:Spool.tracking=None
+    def test_private_runner_outer_success_cannot_complete_partial_payload(self):
+        from unittest.mock import patch
+        from personal_context.refresh_worker import run_mac
+        from personal_context.spool import Spool
+        import json,os
+        with tempfile.TemporaryDirectory() as root:
+            config=__import__('pathlib').Path(root)/'config.json';config.write_text('{}');config.chmod(0o600)
+            def runner(**kwargs):
+                spool=Spool(root+'/canvas')
+                spool.enqueue([{'schema':1,'source':'canvas-lms','kind':'canvas_course','scope':'fictional','records':[{'id':'fixture','payload':{'module_collection':{'status':'unavailable'}}}]}])
+                spool.flush(lambda data:{'receipts':[dict(json.loads(data)['refresh'],committed=True)]})
+                return {'accounts':{'fictional':{}},'pending':0}
+            def deliver(config,payload):return {'refresh_result':dict(json.loads(payload)['refresh_result'],archive_verified=True)}
+            with patch.dict(os.environ,{'PERSONAL_CONTEXT_DATA_DIR':root}),patch('personal_context.cli.load_config',return_value={'calendar_ids':[],'reminder_ids':[]}),patch('personal_context.canvas_sync_runner.run',side_effect=runner),patch('personal_context.cli.deliver_ssh',side_effect=deliver):
+                result=run_mac('canvas','a'*32,'b'*32,config_path=config)
+            self.assertEqual(result['coverage'],'partial')
+            self.assertTrue(result['archive_verified'])

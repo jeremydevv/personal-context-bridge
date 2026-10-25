@@ -281,3 +281,20 @@ class CanvasSpoolCoverageTests(unittest.TestCase):
                 result=run_mac('canvas','a'*32,'b'*32,config_path=config)
             self.assertEqual(result['coverage'],'partial')
             self.assertTrue(result['archive_verified'])
+
+class AttachmentStatusTests(unittest.TestCase):
+    def test_finish_persists_only_bounded_attachment_aggregate(self):
+        with tempfile.TemporaryDirectory() as root:
+            c=Coordinator(PrivateState(root,b'x'*32),{'sources':{'message':{'enabled':True,'capability':'mac'}}},clock=lambda:100)
+            request=c.request(['message']);job=c.claim('fixture')
+            attachments={'invoked':True,'limit':50,'collection':'available_local_files','upstream_hydration':'unknown','completion_kind':'direct_ssh_postcommit_response','counts':{'available_files':100,'pending_before_run':75,'imported':50,'remaining':25,'source_identifier':'fictional-private-value'},'source_identifier':'fictional-private-value'}
+            c.finish(job,{'collection_finished':True,'coverage':'complete','batch_ids':[],'acked_batch_ids':[],'attachment_processing':attachments})
+            status=c.status(request['refresh_id'])
+            self.assertEqual(status['state'],'complete')
+            saved=status['sources']['message']['attachment_processing']
+            self.assertEqual(saved['limit'],50)
+            self.assertEqual(saved['upstream_hydration'],'unknown')
+            self.assertEqual(saved['counts'],{'available_files':100,'pending_before_run':75,'imported':50,'remaining':25})
+            self.assertNotIn('fictional-private-value',repr(status))
+            restarted=Coordinator(c.state,c.config,clock=lambda:101)
+            self.assertEqual(restarted.status(request['refresh_id'])['sources']['message']['attachment_processing'],saved)

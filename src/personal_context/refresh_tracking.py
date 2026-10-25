@@ -14,6 +14,25 @@ ACTIVE = ('queued','waiting','running','interrupted')
 CAPABILITIES = {'health':'waiting_for_device','location':'waiting_for_device','google_timeline':'manual_import_required','icloud_drive':'requires_auth','summaries':'derived_processing'}
 
 
+def _attachment_aggregate(value):
+    """Preserve local bounded-pass evidence without identifiers or source content."""
+    if not isinstance(value,dict): return None
+    result={'invoked':value.get('invoked') is True,'upstream_hydration':'unknown'}
+    limit=value.get('limit')
+    if isinstance(limit,int) and not isinstance(limit,bool) and 0 <= limit <= 10000:
+        result['limit']=limit
+    for field,allowed in (('collection',('available_local_files',)),
+                          ('completion_kind',('direct_ssh_postcommit_response',))):
+        if value.get(field) in allowed: result[field]=value[field]
+    counts=value.get('counts')
+    names=('available_files','pending_before_run','imported','remaining')
+    if isinstance(counts,dict) and all(isinstance(counts.get(name),int) and not isinstance(counts[name],bool)
+                                      and 0 <= counts[name] <= 2**63-1 for name in names):
+        result['counts']={name:counts[name] for name in names}
+    else: result['counts']=None
+    return result
+
+
 def private_config():
     path = os.environ.get('PERSONAL_CONTEXT_REFRESH_CONFIG')
     if not path: return {'sources': {}}
@@ -166,8 +185,11 @@ class Coordinator:
                 batches=result.get('batch_ids',[]); acks=result.get('acked_batch_ids',[])
                 complete=(result.get('collection_finished') is True and result.get('coverage')=='complete' and set(batches)==set(acks))
                 j.update(state='complete' if complete else 'partial' if batches or result.get('collection_finished') or result.get('execution_finished') else 'failed',phase=result.get('completion_kind','archive_acknowledged') if complete else 'partial',error_code=None if complete else (result.get('error_code','incomplete_coverage') if re.fullmatch('[a-z_]{1,64}',str(result.get('error_code','incomplete_coverage'))) else 'incomplete_coverage'),finished_at=now,batches=len(batches),acknowledged_batches=len(acks),coverage=result.get('coverage','unknown'),completion_kind=result.get('completion_kind','archive_acknowledged'))
-                for field in ('headless_mode','headless','gui_fallback','app_lifecycle','attachment_processing','upstream_freshness','local_replica_only','archive_verified','completion_kind'):
+                for field in ('headless_mode','headless','gui_fallback','app_lifecycle','upstream_freshness','local_replica_only','archive_verified','completion_kind'):
                     if field in result: j[field]=result[field]
+                if job['source']=='message':
+                    attachments=_attachment_aggregate(result.get('attachment_processing'))
+                    if attachments is not None: j['attachment_processing']=attachments
                 if complete: data['baselines'][job['source']]={'refresh_id':job['refresh_id'],'acknowledged_at':now}
             return True
 

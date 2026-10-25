@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>org.personalcontext.personal-context-refresh-inbox</string>
+  <key>ProgramArguments</key><array>
+    <string>/ABSOLUTE/PATH/TO/python</string>
+    <string>-m</string><string>personal_context.refresh_worker</string>
+    <string>--drain-mac-inbox</string><string>--config</string>
+    <string>/ABSOLUTE/PRIVATE/config.json</string>
+  </array>
+  <key>EnvironmentVariables</key><dict>
+    <key>PYTHONPATH</key><string>/ABSOLUTE/RUNTIME/src</string>
+    <key>PATH</key><string>/ABSOLUTE/PRIVATE/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>PERSONAL_CONTEXT_DATA_DIR</key><string>/ABSOLUTE/PRIVATE/data</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>30</integer>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>ProcessType</key><string>Background</string>
+</dict></plist>

@@ -178,7 +178,10 @@ def dispatch(job,config):
     if not python or not Path(python).is_absolute() or not path or not Path(path).is_absolute(): raise ValueError('private_mac_runtime_unconfigured')
     remote_env=config.get('mac_env',{})
     if not isinstance(remote_env,dict) or any(not re.fullmatch('[A-Za-z_][A-Za-z0-9_]*',k) or not isinstance(v,str) for k,v in remote_env.items()): raise ValueError('invalid_mac_environment')
-    remote=shlex.join(['env']+[k+'='+v for k,v in remote_env.items()]+[python,'-m','personal_context.refresh_worker','--run-mac','--source',source,'--refresh-id',job['refresh_id'],'--attempt-id',job['attempt_id'],'--mode',job['mode'],'--config',path])
+    dispatch_mode=cfg.get('mac_dispatch',config.get('mac_dispatch','ssh'))
+    if dispatch_mode not in ('ssh','launchd'):raise ValueError('invalid_mac_dispatch')
+    action='--enqueue-mac-inbox' if dispatch_mode=='launchd' else '--run-mac'
+    remote=shlex.join(['env']+[k+'='+v for k,v in remote_env.items()]+[python,'-m','personal_context.refresh_worker',action,'--source',source,'--refresh-id',job['refresh_id'],'--attempt-id',job['attempt_id'],'--mode',job['mode'],'--config',path])
     try:
         raw=bounded_run(['ssh','-T','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=5','-o','ConnectionAttempts=1',target,remote],timeout=3650)
         result=json.loads(raw)
@@ -284,8 +287,14 @@ def enqueue_scheduled(group,mode='recent',config_path=None):
 
 
 def main(argv=None):
-    p=argparse.ArgumentParser();p.add_argument('--once',action='store_true');p.add_argument('--enqueue-scheduled',choices=['apple','canvas']);p.add_argument('--request-scheduled',choices=['apple','canvas','obsidian','saved_video']);p.add_argument('--request-id');p.add_argument('--run-mac',action='store_true');p.add_argument('--source');p.add_argument('--refresh-id');p.add_argument('--attempt-id');p.add_argument('--mode',default='recent',choices=['recent','full']);p.add_argument('--config')
+    p=argparse.ArgumentParser();p.add_argument('--once',action='store_true');p.add_argument('--enqueue-mac-inbox',action='store_true');p.add_argument('--drain-mac-inbox',action='store_true');p.add_argument('--wait-seconds',type=float,default=3600);p.add_argument('--enqueue-scheduled',choices=['apple','canvas']);p.add_argument('--request-scheduled',choices=['apple','canvas','obsidian','saved_video']);p.add_argument('--request-id');p.add_argument('--run-mac',action='store_true');p.add_argument('--source');p.add_argument('--refresh-id');p.add_argument('--attempt-id');p.add_argument('--mode',default='recent',choices=['recent','full']);p.add_argument('--config')
     args=p.parse_args(argv)
+    if args.enqueue_mac_inbox:
+        from .refresh_mac_inbox import enqueue
+        print(json.dumps(enqueue(args.source,args.refresh_id,args.attempt_id,args.mode,args.config,args.wait_seconds)));return 0
+    if args.drain_mac_inbox:
+        from .refresh_mac_inbox import drain
+        print(json.dumps(drain(args.config)));return 0
     if args.enqueue_scheduled:
         print(json.dumps(enqueue_scheduled(args.enqueue_scheduled,args.mode,args.config)));return 0
     if args.request_scheduled:

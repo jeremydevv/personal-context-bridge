@@ -298,3 +298,16 @@ class AttachmentStatusTests(unittest.TestCase):
             self.assertNotIn('fictional-private-value',repr(status))
             restarted=Coordinator(c.state,c.config,clock=lambda:101)
             self.assertEqual(restarted.status(request['refresh_id'])['sources']['message']['attachment_processing'],saved)
+
+class LaunchdDispatchTests(unittest.TestCase):
+    def test_source_launchd_mode_queues_fixed_inbox_command(self):
+        from unittest.mock import patch
+        from personal_context.refresh_worker import dispatch
+        import json
+        job={'refresh_id':'a'*32,'attempt_id':'b'*32,'source':'calendar','mode':'recent'}
+        config={'mac_target':'fixture@mac.invalid','mac_python':'/private/python','mac_config':'/private/config.json','sources':{'calendar':{'capability':'mac','mac_dispatch':'launchd'}}}
+        with patch('personal_context.refresh_worker.bounded_run',return_value=json.dumps(job)) as runner:dispatch(job,config)
+        command=runner.call_args.args[0][-1]
+        self.assertIn('--enqueue-mac-inbox',command)
+        self.assertNotIn('--run-mac',command)
+        self.assertIn('--source calendar',command)

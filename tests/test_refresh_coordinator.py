@@ -221,3 +221,21 @@ class MessageCadenceTests(unittest.TestCase):
                 run_mac('message','c'*32,'d'*32,mode='full',config_path=config)
                 self.assertEqual(os.environ['PERSONAL_CONTEXT_SYNC_LANE'],'original')
         self.assertEqual(seen,['fast','fast','full','full'])
+
+class SourceRuntimeTests(unittest.TestCase):
+    def test_canvas_uses_trusted_source_runtime_override(self):
+        from unittest.mock import patch
+        from personal_context.refresh_worker import dispatch
+        import json
+        job={'refresh_id':'a'*32,'attempt_id':'b'*32,'source':'canvas','mode':'recent'}
+        config={'mac_target':'fixture@mac.invalid','mac_python':'/private/default/python','mac_config':'/private/config.json','sources':{'canvas':{'capability':'mac','mac_python':'/private/canvas/python'}}}
+        with patch('personal_context.refresh_worker.bounded_run',return_value=json.dumps(job)) as run:
+            dispatch(job,config)
+        command=run.call_args.args[0][-1]
+        self.assertIn('/private/canvas/python',command)
+        self.assertNotIn('/private/default/python',command)
+    def test_relative_source_runtime_override_is_rejected(self):
+        from personal_context.refresh_worker import dispatch
+        job={'refresh_id':'a'*32,'attempt_id':'b'*32,'source':'canvas','mode':'recent'}
+        config={'mac_target':'fixture@mac.invalid','mac_python':'/private/default/python','mac_config':'/private/config.json','sources':{'canvas':{'capability':'mac','mac_python':'relative-python'}}}
+        with self.assertRaises(ValueError):dispatch(job,config)

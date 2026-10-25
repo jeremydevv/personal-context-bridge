@@ -174,7 +174,7 @@ def dispatch(job,config):
 
     target=config.get('mac_target','')
     if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.-]*@[A-Za-z0-9][A-Za-z0-9.-]*',target): return {'retryable':True}
-    python=config.get('mac_python');path=config.get('mac_config')
+    python=cfg.get('mac_python',config.get('mac_python'));path=config.get('mac_config')
     if not python or not Path(python).is_absolute() or not path or not Path(path).is_absolute(): raise ValueError('private_mac_runtime_unconfigured')
     remote_env=config.get('mac_env',{})
     if not isinstance(remote_env,dict) or any(not re.fullmatch('[A-Za-z_][A-Za-z0-9_]*',k) or not isinstance(v,str) for k,v in remote_env.items()): raise ValueError('invalid_mac_environment')

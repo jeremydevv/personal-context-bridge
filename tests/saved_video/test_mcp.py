@@ -60,6 +60,10 @@ def test_mcp_delivers_images_evidence_and_rejects_unlisted_video(tmp_path):
             args=["-m", "personal_context.saved_video.mcp_server"],
             env={
                 **os.environ,
+                "HOME": str(tmp_path),
+                "PERSONAL_CONTEXT_REFRESH_ENABLED": "0",
+                "PERSONAL_CONTEXT_KEY_FILE": str(tmp_path / "missing-fixture.key"),
+                "PERSONAL_CONTEXT_REFRESH_DIR": str(tmp_path / "refresh"),
                 "SAVED_VIDEO_ALLOWLIST": str(urls),
                 "SAVED_VIDEO_DATA": str(data),
             },
@@ -68,7 +72,18 @@ def test_mcp_delivers_images_evidence_and_rejects_unlisted_video(tmp_path):
             async with ClientSession(r, w) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert len(tools.tools) == 5
+                assert {tool.name for tool in tools.tools} == {
+                    "list_saved_videos", "search_saved_videos", "get_video_evidence",
+                    "get_video_frame", "get_video_storyboard",
+                    "data_source_status", "data_refresh_status",
+                }
+                assert all(tool.annotations.readOnlyHint for tool in tools.tools)
+                status = await session.call_tool("data_source_status", {})
+                assert not status.isError
+                payload = status.structuredContent or json.loads(status.content[0].text)
+                assert set(payload["sources"]) == {"saved_video"}
+                denied = await session.call_tool("data_source_status", {"source": "mail"})
+                assert denied.isError
                 result = await session.call_tool(
                     "search_saved_videos", {"query": "bicycle"}
                 )
@@ -127,6 +142,10 @@ def test_mcp_delivers_images_evidence_and_rejects_unlisted_video(tmp_path):
                 "PERSONAL_CONTEXT_SAVED_VIDEO_ENABLED": "1",
                 "PERSONAL_CONTEXT_DB": str(database),
                 "PERSONAL_CONTEXT_KEY_FILE": str(key),
+                "HOME": str(tmp_path),
+                "PERSONAL_CONTEXT_REFRESH_ENABLED": "0",
+                "PERSONAL_CONTEXT_KEY_FILE": str(tmp_path / "missing-fixture.key"),
+                "PERSONAL_CONTEXT_REFRESH_DIR": str(tmp_path / "refresh"),
                 "SAVED_VIDEO_ALLOWLIST": str(urls),
                 "SAVED_VIDEO_DATA": str(data),
                 "SAVED_VIDEO_ARCHIVE": str(archive),

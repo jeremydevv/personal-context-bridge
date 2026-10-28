@@ -126,10 +126,13 @@ def identifier(item):
     return str(value)
 
 
-def collect_batches(client, account, *, download_files=False, extended=True):
+def collect_batches(client, account, *, download_files=False, extended=True, include_inactive=False):
     if not re.fullmatch(r'[A-Za-z0-9_-]+', account): raise ValueError('invalid account label')
     at = datetime.now(timezone.utc).isoformat().replace('+00:00','Z')
-    courses = client.pages('/api/v1/courses?enrollment_type=student&enrollment_state=active&include[]=total_scores&per_page=100')
+    course_query = '/api/v1/courses?enrollment_type=student&enrollment_state=active&include[]=total_scores&per_page=100'
+    if include_inactive: course_query = course_query.replace('&enrollment_state=active', '')
+    courses = client.pages(course_query)
+    core_coverage = {}
     batches = []
     assignments_by_course = {}
     def batch(kind, scope, items):
@@ -153,8 +156,10 @@ def collect_batches(client, account, *, download_files=False, extended=True):
             try:
                 source_items = client.pages(prefix + endpoint)
             except CanvasAPIError as exc:
-                if kind != 'file' or exc.status not in (403,404):raise
+                if exc.status not in (403,404) or (kind != 'file' and not include_inactive):raise
+                core_coverage.setdefault(cid,{})[kind] = {'status':'unavailable','http_status':exc.status,'checked_at':at}
                 continue
+            core_coverage.setdefault(cid,{})[kind] = {'status':'available','checked_at':at}
             if kind == 'assignment':assignments_by_course[int(cid)] = source_items
             for item in source_items:
                 rid = identifier(item); payload = dict(item); pdf_data = None
@@ -206,6 +211,11 @@ def collect_batches(client, account, *, download_files=False, extended=True):
         linked_pages = [b for b in batches if b['kind'] == 'canvas_page']
         batches = [b for b in batches if b['kind'] != 'canvas_page']
         batches.extend(collect_resources(read_resource, account, courses, assignments_by_course, at, linked_pages))
+        for state in batches:
+            if state['kind'] != 'canvas_collection_state': continue
+            for record in state['records']:
+                payload = record.get('payload', {})
+                payload.setdefault('features', {}).update(core_coverage.get(str(payload.get('course_id')), {}))
 
     # Conversation detail reads must explicitly disable Canvas's default
     # auto-mark-as-read behavior so collection remains read-only.

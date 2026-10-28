@@ -40,6 +40,8 @@ def _pdf_bytes(store, record_id):
 
 
 def register_tools(mcp, common_refresh=True):
+    from .canvas_browser_mcp import register as register_browser, browser_status
+    register_browser(mcp)
     from .refresh_mcp import register as register_refresh, with_tracking, request, compatibility
     if common_refresh:
         register_refresh(mcp, "canvas", os.environ.get("PERSONAL_CONTEXT_DB"))
@@ -58,7 +60,7 @@ def register_tools(mcp, common_refresh=True):
 
     @mcp.tool(annotations=read_only)
     def canvas_status() -> dict:
-        """Show connected Canvas account labels, archive counts, and last sync times. Mac collection requires the Mac to be awake; check freshness before claiming current state."""
+        """Show connected Canvas account labels, archive counts, and last sync times. High-school collection requires the Mac; browser-backed accounts use canvas_browser_status and refresh_canvas_browser. Check per-account freshness."""
         def query(store):
             rows = store.db.execute("""
                 SELECT scope,kind,collected_at,count FROM syncs
@@ -100,7 +102,9 @@ def register_tools(mcp, common_refresh=True):
                     short = target[7:]
                     item[short + "_count"] = store.db.execute("SELECT COUNT(*) FROM records WHERE kind=? AND deleted=0 AND substr(id,1,length(?))=?", (target, 'canvas:' + label + ':', 'canvas:' + label + ':')).fetchone()[0]
             return {"accounts": accounts}
-        return with_tracking(_with_store(query), "canvas", os.environ.get("PERSONAL_CONTEXT_DB"))
+        result = with_tracking(_with_store(query), "canvas", os.environ.get("PERSONAL_CONTEXT_DB"))
+        result["browser_collection"] = browser_status()
+        return result
 
     @mcp.tool(annotations=read_only)
     def search_canvas(query: str, kind: str = "", account: str = "", limit: int = 20) -> dict:
@@ -146,6 +150,26 @@ def register_tools(mcp, common_refresh=True):
                     'limit':limit,'offset':offset,'next_offset':offset+len(rows) if offset+len(rows)<total else None,
                     'syncs':syncs,'collection_status':state['payload'] if state else {'status':'not_collected','hint':'Use canvas_status for per-account/course coverage'}}
         return _with_store(lookup)
+
+    @mcp.tool(annotations=read_only)
+    def canvas_grades(account: str = "", course_record_id: str = "",
+                      limit: int = 50, offset: int = 0) -> dict:
+        """Read reported Canvas grades without calculating or inventing grades. With course_record_id, return paginated assignment scores, grades, submission status and due dates. Otherwise return paginated courses and their reported enrollment totals. Use the account label returned by canvas_status or canvas_browser_status. Hidden/ungraded scores remain null; consult syncs and coverage before treating results as current."""
+        result = list_canvas_records('assignment' if course_record_id else 'course', account, course_record_id, limit, offset)
+        rows = []
+        for record in result['results']:
+            payload = record['payload']
+            row = {'record_id':record['id'], 'title':record['title']}
+            if course_record_id:
+                submission = payload.get('submission') or {}
+                row.update(due_at=payload.get('due_at'), points_possible=payload.get('points_possible'),
+                           score=submission.get('score'), grade=submission.get('grade'),
+                           excused=submission.get('excused'), workflow_state=submission.get('workflow_state'))
+            else:
+                row['enrollments'] = [{key:e.get(key) for key in ('type','enrollment_state','computed_current_score',
+                    'computed_final_score','computed_current_grade','computed_final_grade')} for e in payload.get('enrollments',[])]
+            rows.append(row)
+        return {**result, 'results':rows}
 
     def summary_query(operation, **kwargs):
         try:

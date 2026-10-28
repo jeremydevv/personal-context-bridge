@@ -106,7 +106,7 @@ class BrowserCanvasClient(CanvasClient):
                     self.http.cookies.set_cookie_header(request)
                 else:
                     host = parts.hostname or ''
-                    if not (host.endswith('.instructureusercontent.com') or host.endswith('.canvas-user-content.com') or host.endswith('.s3.amazonaws.com')):
+                    if not (host.endswith('.instructureusercontent.com') or host.endswith('.canvas-user-content.com') or host.endswith('.inscloudgate.net') or host.endswith('.s3.amazonaws.com')):
                         raise ValueError('Unapproved Canvas file CDN')
                     request = anonymous.build_request('GET', current)
                 response = anonymous.send(request, stream=True)
@@ -274,11 +274,17 @@ def run(config_path, database):
             try:
                 for batch in batches:store.ingest(batch)
             finally:store.close()
-            counts=Counter()
-            for batch in batches:counts[batch['kind']]+=len(batch['records'])
+            counts=Counter();file_coverage=Counter();pdf_count=0
+            for batch in batches:
+                counts[batch['kind']]+=len(batch['records'])
+                if batch['kind']=='canvas_file':
+                    for record in batch['records']:
+                        payload=record.get('payload',{})
+                        file_coverage[payload.get('extraction_status','unknown')]+=1
+                        pdf_count+=payload.get('pdf_status')=='available'
             status.update(state='partial' if any(_partial(b) for b in batches) else 'complete',
                           last_success_at=datetime.now(timezone.utc).isoformat(),counts=dict(counts),
-                          batches=len(batches),error_code=None)
+                          batches=len(batches),error_code=None,file_text_coverage=dict(file_coverage),archived_pdf_count=pdf_count)
         except (PermissionError, CanvasAPIError) as exc:
             auth=isinstance(exc,PermissionError) or exc.status in (401,302,303)
             status.update(state='authentication_required' if auth else 'failed',error_code='browser_sign_in_required' if auth else 'canvas_http_error')

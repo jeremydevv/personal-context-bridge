@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-MAX_FILE_BYTES = 16 * 1024 * 1024
+MAX_FILE_BYTES = 64 * 1024 * 1024
 
 
 def _run(command):

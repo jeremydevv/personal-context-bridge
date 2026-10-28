@@ -174,3 +174,10 @@ class BrowserFileTests(unittest.TestCase):
         self.assertEqual(file['records'][0]['payload']['extraction_status'],'available')
         self.assertEqual(batches[1]['records'][0]['payload']['features']['file']['status'],'unavailable')
         self.assertEqual(batches[1]['records'][0]['payload']['features']['module_linked_file']['available_count'],1)
+
+class FileBoundTests(unittest.TestCase):
+    def test_textbook_size_is_bounded_at_64_mib(self):
+        from personal_context.canvas_pdf import MAX_FILE_BYTES, _write_pdf
+        self.assertEqual(MAX_FILE_BYTES,64*1024*1024)
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(ValueError):_write_pdf(tmp,b'%PDF-'+bytes(MAX_FILE_BYTES))

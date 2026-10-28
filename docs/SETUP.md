@@ -147,7 +147,7 @@ with mode 0600 and never put the token in shell arguments or Git.
 
 Set `base_url` to your institution's HTTPS Canvas origin and `account` to a short
 label of your choice. Set `download_files` to true only if you want bounded
-PDF/DOCX text extraction and retention of original PDFs (up to 16 MiB per file).
+PDF/DOCX text extraction and retention of original PDFs (up to 64 MiB per file).
 Originals are stored separately from text in the encrypted archive; they are not
 included in search or record responses. PDF extraction needs `pdftotext`; DOCX
 uses the standard library. Text extraction omits embedded images and vector

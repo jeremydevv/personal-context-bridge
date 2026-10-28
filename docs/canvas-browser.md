@@ -34,7 +34,7 @@ Use the existing encrypted archive key and database environment. Run:
 python -m personal_context.canvas_browser --config /private/canvas-browser.json --db /private/context.sqlite3
 ```
 
-Linux `liblz4` is needed to decode Firefox's recovery format. The collector reads only the configured session file; it never modifies or clones the Firefox profile. Only default-context cookies for the exact Canvas host are accepted. PDF/DOCX/PPTX/plain-text downloads allow exact institutional file paths or signed Instructure, Canvas user-content, or S3 CDN URLs; external content is otherwise metadata only.
+Linux `liblz4` is needed to decode Firefox's recovery format. The collector reads only the configured session file; it never modifies or clones the Firefox profile. Only default-context cookies for the exact Canvas host are accepted. PDF/DOCX/PPTX/plain-text downloads allow exact institutional file paths or signed Instructure, Canvas user-content, or S3 CDN URLs; external content is otherwise metadata only. File reads stop at 64 MiB; PDF processing retains its 30-second deadline and bounded page rendering.
 
 Configure an owner-managed user service named `personal-context-canvas-browser.service` with that command. A periodic timer is optional. The MCP refresh tool only requests this fixed service and never executes model-supplied commands. Run status contains no credentials. Keep the profile and archive private; use `ReadOnlyPaths` on the profile for the worker.
 

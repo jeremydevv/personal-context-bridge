@@ -40,7 +40,8 @@ def private_read(path, limit=MAX_SESSION_BYTES):
 
 
 def session_cookies(path, host):
-    data = private_read(path)
+    try:data = private_read(path)
+    except FileNotFoundError:raise PermissionError('Open the configured Firefox Canvas session') from None
     if data[:8] != b'mozLz40\0' or len(data) < 12:
         raise ValueError('Invalid Firefox session format')
     length = struct.unpack('<I', data[8:12])[0]

@@ -24,6 +24,7 @@ class BrowserTests(unittest.TestCase):
             cookies=session_cookies(path,'school.example.invalid')
             self.assertEqual(list(cookies),['session'])
             with self.assertRaises(PermissionError):session_cookies(path,'absent.example.invalid')
+            with self.assertRaises(PermissionError):session_cookies(Path(tmp)/'missing','school.example.invalid')
             path.chmod(0o644)
             with self.assertRaises(ValueError):session_cookies(path,'school.example.invalid')
 

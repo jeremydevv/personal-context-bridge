@@ -28,7 +28,7 @@ Configure the environment from the detailed setup guide. Standard archive surfac
 
 An existing authenticated Firefox session can collect a separately configured
 Canvas account on Ubuntu, without the Mac. See [browser refresh](../../tools/refresh_canvas_browser/README.md)
-for the hourly service, locking, retries and login status. Existing connector
+for the 30-minute service, locking, retries and login status. Existing connector
 catalogs can use `force_refresh_canvas(account="<configured account>")`; omit
 `account` only for Mac collection. No additional tunnel is required when the main
 Personal Context server already exposes Canvas.

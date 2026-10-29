@@ -15,3 +15,18 @@ per-attempt timeout. Expired login exits 2, suppressing retries for that activat
 status reports `authentication_required` and retains the previous success timestamp.
 Sign in interactively through the existing browser; never put cookies in source.
 A partial snapshot is not complete coverage: inspect per-course collection state.
+
+Pacing targets roughly nine minutes per full collection by default
+(`refresh_target_seconds=540`, range 60–900). One shared request-start limiter
+covers API calls, file downloads and redirects, including parallel file workers.
+It uses the last successful total HTTP request count; the first run estimates
+file/redirect traffic from prior API and file counts. A minimum interval of
+0.0625 seconds prevents bursts; `request_interval_seconds` can increase it.
+Network delays and changing coverage can extend the target duration. Status
+includes the actual interval and total HTTP count; API progress counts remain
+separate. This does not reduce the number of resources collected.
+
+HTTP 429 stops the batch, preserves the previous archive, and reports
+`rate_limited` with `retry_not_before`. Manual and scheduled attempts respect
+that persisted cooldown. `Retry-After` seconds and HTTP dates are supported;
+missing/invalid values use five minutes. No immediate service retry occurs.

@@ -14,6 +14,9 @@ import os
 from pathlib import Path
 import re
 import stat
+import threading
+import time
+from email.utils import parsedate_to_datetime
 import subprocess
 import struct
 from urllib.parse import urlsplit
@@ -66,12 +69,61 @@ def session_cookies(path, host):
     return cookies
 
 
+class CanvasThrottled(Exception):
+    def __init__(self, retry_at):
+        self.retry_at = retry_at
+
+
+class RequestPacer:
+    """One request-start budget shared by API calls, file workers and redirects."""
+    def __init__(self, interval=0.0625):
+        self.interval = interval
+        self.lock = threading.Lock()
+        self.next_at = 0.0
+        self.throttled = None
+        self.requests_started = 0
+
+    def wait(self):
+        with self.lock:
+            if self.throttled:
+                raise self.throttled
+            delay = self.next_at - time.monotonic()
+            if delay > 0:
+                time.sleep(delay)
+            if self.throttled:
+                raise self.throttled
+            # Reset from actual dispatch time; never accumulate burst credits.
+            self.next_at = time.monotonic() + self.interval
+            self.requests_started += 1
+
+    def response(self, response):
+        if response.status_code != 429:
+            return
+        now = time.time()
+        value = response.headers.get('retry-after', '')
+        try:
+            delay = float(value)
+            if not 0 <= delay <= 365 * 86400:
+                raise ValueError('invalid retry delay')
+            retry_at = now + delay
+        except ValueError:
+            try:
+                retry_at = parsedate_to_datetime(value).timestamp()
+            except (ValueError, TypeError, OverflowError):
+                retry_at = now + 300
+        # Stop this batch. Subsequent manual/timer runs honor the persisted time.
+        self.throttled = CanvasThrottled(max(now + 60, retry_at))
+        raise self.throttled
+
+
 class BrowserCanvasClient(CanvasClient):
-    def __init__(self, base_url, cookies, *, transport=None):
+    def __init__(self, base_url, cookies, *, transport=None, request_interval=0.0625):
         super().__init__(base_url, 'unused-browser-auth', transport=transport)
+        self.pacer = RequestPacer(request_interval)
         self._download_transport = transport
         self.http.cookies = cookies
-        self.http.event_hooks = {'request': [self._guard], 'response': [self._check_auth_response]}
+        self.http.event_hooks = {'request': [self._guard, lambda request: self.pacer.wait()],
+                                 'response': [self.pacer.response, self._check_auth_response]}
 
     @staticmethod
     def _check_auth_response(response):
@@ -118,8 +170,10 @@ class BrowserCanvasClient(CanvasClient):
                     if not (host.endswith('.instructureusercontent.com') or host.endswith('.canvas-user-content.com') or host.endswith('.inscloudgate.net') or host.endswith('.s3.amazonaws.com')):
                         raise ValueError('Unapproved Canvas file CDN')
                     request = anonymous.build_request('GET', current)
+                self.pacer.wait()
                 response = anonymous.send(request, stream=True)
                 try:
+                    self.pacer.response(response)
                     if response.status_code in (301,302,303,307,308):
                         location = response.headers.get('location')
                         if not location: raise ValueError('Invalid file redirect')
@@ -228,6 +282,12 @@ def load_config(path):
         raise ValueError('Pinned Canvas user ID required')
     if 'download_files' in config and not isinstance(config['download_files'],bool):
         raise ValueError('download_files must be boolean')
+    interval = config.get('request_interval_seconds', 0.0625)
+    if isinstance(interval, bool) or not isinstance(interval, (int, float)) or not 0.0625 <= interval <= 60:
+        raise ValueError('request_interval_seconds must be between 0.0625 and 60')
+    target = config.get('refresh_target_seconds', 540)
+    if isinstance(target, bool) or not isinstance(target, (int, float)) or not 60 <= target <= 900:
+        raise ValueError('refresh_target_seconds must be between 60 and 900')
     for field in ('session_file','status_file'):
         if not Path(config.get(field,'')).is_absolute(): raise ValueError('Absolute private paths required')
     return config
@@ -252,14 +312,25 @@ def run(config_path, database):
         except BlockingIOError: return {'state':'running','account':config['account']}
         previous = {}
         if status_path.exists(): previous=json.loads(private_read(status_path,65536))
+        if previous.get('retry_not_before_epoch', 0) > time.time():
+            return {**previous, 'state': 'rate_limited'}
+        # Use the last complete all-host request count; older status counted API
+        # calls only, so estimate file downloads plus redirects on the first run.
+        expected_requests = previous.get('last_success_http_requests') or (
+            previous.get('requests_completed', 1000) + 3 * previous.get('counts', {}).get('canvas_file', 100))
+        interval = max(config.get('request_interval_seconds', 0.0625),
+                       config.get('refresh_target_seconds', 540) / max(1, expected_requests))
         status={'account':config['account'],'state':'running','started_at':datetime.now(timezone.utc).isoformat(),
                 'last_success_at':previous.get('last_success_at'),'counts':previous.get('counts',{}),
-                'authentication':'firefox_session','source_writes':False,'phase':'collecting','requests_completed':0}
+                'authentication':'firefox_session','source_writes':False,'phase':'collecting','requests_completed':0,
+                'request_interval_seconds':interval,
+                'refresh_target_seconds':config.get('refresh_target_seconds',540),
+                'last_success_http_requests':previous.get('last_success_http_requests')}
         write_status(status_path,status)
         client=None
         try:
             cookies=session_cookies(config['session_file'],urlsplit(config['base_url']).hostname)
-            client=BrowserCanvasClient(config['base_url'],cookies)
+            client=BrowserCanvasClient(config['base_url'],cookies,request_interval=interval)
             import threading
             progress_lock=threading.Lock()
             request_count=0
@@ -268,7 +339,7 @@ def run(config_path, database):
                 with progress_lock:
                     request_count+=1
                     if request_count % 25 == 0:
-                        status.update(requests_completed=request_count, heartbeat_at=datetime.now(timezone.utc).isoformat())
+                        status.update(requests_completed=request_count, http_requests_started=client.pacer.requests_started, heartbeat_at=datetime.now(timezone.utc).isoformat())
                         write_status(status_path,status)
             client.http.event_hooks.setdefault('response', []).append(progress)
             profile=client.get('/api/v1/users/self/profile')
@@ -293,7 +364,11 @@ def run(config_path, database):
                         pdf_count+=payload.get('pdf_status')=='available'
             status.update(state='partial' if any(_partial(b) for b in batches) else 'complete',
                           last_success_at=datetime.now(timezone.utc).isoformat(),counts=dict(counts),
-                          batches=len(batches),error_code=None,file_text_coverage=dict(file_coverage),archived_pdf_count=pdf_count)
+                          batches=len(batches),error_code=None,last_success_http_requests=client.pacer.requests_started,file_text_coverage=dict(file_coverage),archived_pdf_count=pdf_count)
+        except CanvasThrottled as exc:
+            status.update(state='rate_limited', error_code='canvas_rate_limited',
+                          retry_not_before_epoch=exc.retry_at,
+                          retry_not_before=datetime.fromtimestamp(exc.retry_at,timezone.utc).isoformat())
         except (PermissionError, CanvasAPIError) as exc:
             auth=isinstance(exc,PermissionError) or exc.status in (401,302,303)
             status.update(state='authentication_required' if auth else 'failed',error_code='browser_sign_in_required' if auth else 'canvas_http_error')
@@ -301,6 +376,8 @@ def run(config_path, database):
             status.update(state='failed',error_code='browser_collection_failed')
         finally:
             if client:client.close()
+        if client:
+            status['http_requests_started'] = client.pacer.requests_started
         status['phase']='finished'
         status['finished_at']=datetime.now(timezone.utc).isoformat()
         write_status(status_path,status)
@@ -312,7 +389,7 @@ def main():
     parser.add_argument('--config',required=True);parser.add_argument('--db',required=True)
     args=parser.parse_args()
     result=run(args.config,args.db);print(json.dumps(result))
-    if result['state'] == 'authentication_required':raise SystemExit(2)
+    if result['state'] in ('authentication_required', 'rate_limited'):raise SystemExit(2)
     if result['state'] == 'failed':raise SystemExit(1)
 
 

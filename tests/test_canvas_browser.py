@@ -71,6 +71,7 @@ class BrowserTests(unittest.TestCase):
                  patch('personal_context.canvas_browser.BrowserCanvasClient') as factory, \
                  patch('personal_context.canvas_browser.collect_batches') as collect, \
                  patch('personal_context.canvas_browser.Store') as store:
+                factory.return_value.pacer.requests_started=1
                 factory.return_value.get.return_value={'id':8}
                 result=run(path,tmp+'/db')
                 self.assertEqual(result['state'],'authentication_required')
@@ -84,6 +85,7 @@ class BrowserTests(unittest.TestCase):
             path=Path(tmp)/'config';path.write_text(json.dumps(config));path.chmod(0o600)
             status=Path(tmp)/'status';status.write_text(json.dumps({'last_success_at':'prior','counts':{'canvas_course':2}}));status.chmod(0o600)
             with patch('personal_context.canvas_browser.session_cookies',return_value=httpx.Cookies()),patch('personal_context.canvas_browser.BrowserCanvasClient') as factory,patch('personal_context.canvas_browser.Store') as store:
+                factory.return_value.pacer.requests_started=1
                 factory.return_value.get.side_effect=CanvasAPIError(401)
                 result=run(path,tmp+'/db');store.assert_not_called()
                 self.assertEqual(result['last_success_at'],'prior');self.assertEqual(result['counts'],{'canvas_course':2})
@@ -228,3 +230,61 @@ class BrowserRefreshTests(unittest.TestCase):
             with patch('sys.argv',['canvas-browser','--config','unused','--db','unused']), patch('personal_context.canvas_browser.run',return_value={'state':state}), patch('builtins.print'):
                 with self.assertRaises(SystemExit) as error:main()
                 self.assertEqual(error.exception.code,code)
+
+
+class RequestPacingTests(unittest.TestCase):
+    def clock(self):
+        self.now = 0.0
+        def sleep(delay):self.now += delay
+        return patch('personal_context.canvas_browser.time.monotonic',side_effect=lambda:self.now), patch('personal_context.canvas_browser.time.sleep',side_effect=sleep)
+
+    def test_parallel_workers_share_budget_without_burst_credit(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from personal_context.canvas_browser import RequestPacer
+        pacer=RequestPacer(0.54)
+        monotonic,sleep=self.clock()
+        with monotonic,sleep,ThreadPoolExecutor(max_workers=4) as pool:
+            list(pool.map(lambda _:pacer.wait(),range(1000)))
+            self.assertAlmostEqual(self.now,999*0.54)
+            self.assertEqual(pacer.requests_started,1000)
+            self.now += 10
+            pacer.wait();stamp=self.now;pacer.wait()
+            self.assertAlmostEqual(self.now-stamp,0.54)
+
+    def test_api_and_file_redirects_share_same_pacer(self):
+        starts=[]
+        def handler(request):
+            starts.append(self.now)
+            if request.url.path.startswith('/api/v1/'):
+                return httpx.Response(200,json={'id':7})
+            if request.url.host=='school.example.invalid':
+                return httpx.Response(302,headers={'location':'https://content.canvas-user-content.com/signed'})
+            self.assertNotIn('cookie',request.headers)
+            return httpx.Response(200,content=b'%PDF-fictional')
+        monotonic,sleep=self.clock()
+        client=BrowserCanvasClient('https://school.example.invalid',httpx.Cookies(),transport=httpx.MockTransport(handler),request_interval=0.54)
+        with monotonic,sleep:
+            client.get('/api/v1/users/self/profile');client.download('/files/7/download')
+        client.close()
+        self.assertEqual(starts,[0,0.54,1.08])
+
+    def test_throttle_stops_workers_and_preserves_retry_after(self):
+        from personal_context.canvas_browser import RequestPacer,CanvasThrottled
+        pacer=RequestPacer()
+        with patch('personal_context.canvas_browser.time.time',return_value=1000):
+            with self.assertRaises(CanvasThrottled) as error:
+                pacer.response(httpx.Response(429,headers={'Retry-After':'3600'}))
+            self.assertEqual(error.exception.retry_at,4600)
+        with self.assertRaises(CanvasThrottled):pacer.wait()
+        self.assertEqual(pacer.requests_started,0)
+
+    def test_persisted_cooldown_skips_authentication_and_archive(self):
+        from personal_context.canvas_browser import write_status
+        with tempfile.TemporaryDirectory() as tmp:
+            settings={'account':'demo','status_file':tmp+'/status'}
+            write_status(settings['status_file'],{'last_success_at':'prior','state':'rate_limited','retry_not_before_epoch':5000})
+            with patch('personal_context.canvas_browser.load_config',return_value=settings), patch('personal_context.canvas_browser.time.time',return_value=1000), patch('personal_context.canvas_browser.session_cookies') as cookies, patch('personal_context.canvas_browser.Store') as store:
+                result=run('unused',tmp+'/db')
+                self.assertEqual(result['state'],'rate_limited')
+                self.assertEqual(result['last_success_at'],'prior')
+                cookies.assert_not_called();store.assert_not_called()

@@ -25,3 +25,25 @@ Connect the configured MCP surface, confirm this tool is listed, and query a kno
 ## Implementation
 
 Defined in `personal_context.apple_write_mcp`. See [privacy and retention](../../PRIVACY.md).
+
+## Reminder organization limits
+
+The adapter cannot discover/assign list sections, reparent an existing reminder,
+or promote a child to the top level. These operations are reported in
+`unsupported`; no organization write tools or queue operations are registered.
+Unsupported parent/section fields are rejected before queueing.
+
+`add_apple_reminder_subtasks(request_key, item_id, expected_revision, subtasks)`
+creates NEW children; it does not move existing reminders. Both that operation
+and the `parent_id`/`subtasks` metadata returned by
+`inspect_native_apple_reminder(item_id)` rely on **private ReminderKit**. They do
+not satisfy a requirement to use only supported public Apple APIs.
+
+Apple's documented [EKReminder interface](https://developer.apple.com/documentation/eventkit/ekreminder)
+has no parent/child or section properties. The inspected Mac Reminders scripting
+dictionary exposes a read-only reminder container, no child enumeration element,
+and no section class. No supported mutation route has been established. Do not
+substitute list moves, recreated reminders, notes, or direct Apple database edits.
+A future implementation requires a supported Mac adapter and isolated native tests
+proving ID/field preservation, revision checks, cycle rejection, uncertain-delivery
+handling, and readback before these operations can be advertised as available.

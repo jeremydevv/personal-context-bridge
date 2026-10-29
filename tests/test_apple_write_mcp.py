@@ -133,3 +133,21 @@ class WriteMcpTests(unittest.IsolatedAsyncioTestCase):
             for value in [-1, 10081, True, 1.5]:
                 result = await session.call_tool(tool.name, args | {'duration_minutes': value})
                 self.assertTrue(result.isError)
+
+    async def test_reminder_organization_limits_and_rejected_payloads(self):
+        async with self.session('reminder') as session:
+            tools = {t.name: t for t in (await session.list_tools()).tools}
+            self.assertIn('private ReminderKit', tools['apple_pim_capabilities'].description)
+            result = await session.call_tool('apple_pim_capabilities', {})
+            data = json.loads(result.content[0].text)
+            self.assertTrue({'list_sections', 'assign_section', 'reparent_existing_reminder',
+                             'promote_reminder_to_top_level'} <= set(data['unsupported']))
+            self.assertIn('subtasks', data['private_framework_fields'])
+            for field, value in [('parent_id', 'fictional-parent'), ('parent_id', None),
+                                 ('section_id', 'fictional-section')]:
+                result = await session.call_tool('update_apple_reminder', dict(
+                    request_key='unsupported-' + field, item_id='fictional-child',
+                    expected_revision='a' * 64, changes={field: value}))
+                self.assertTrue(result.isError)
+            result = await session.call_tool('pending_apple_write_jobs', {})
+            self.assertNotIn('queued', result.content[0].text)

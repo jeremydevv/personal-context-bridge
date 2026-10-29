@@ -203,14 +203,14 @@ def register(mcp, source):
     mcp.tool(name='list_apple_calendars' if source == 'calendar' else 'list_apple_reminder_lists', annotations=read)(destinations)
 
     def capabilities() -> dict:
-        """Report this adapter's field support. Unsupported features must not be silently replaced with notes, priority, or unrelated reminders. Mac reachability and connector discovery are separate from support."""
+        """Report this adapter's field support. Unsupported features must not be silently replaced with notes, priority, or unrelated reminders. Reminders section discovery/assignment and moving existing reminders under a parent or back to top level are unsupported. Existing subtask creation and hierarchy inspection use private ReminderKit, not a supported public Apple API. Mac reachability and connector discovery are separate from support."""
         from .apple_pim_fields import EVENT, REMINDER
         return dict(adapter='eventkit-json-v1', source=source,
                     operations=['create', 'inspect', 'update', 'update_private', 'delete', 'destinations'],
                     fields=sorted(EVENT if source == 'calendar' else REMINDER),
                     private_framework_fields=['attendees', 'attachments', 'travel_duration'] if source == 'calendar' else ['native_urgent_alarm', 'subtasks', 'synced_tags', 'image_attachments'],
                     attachment_limits=dict(per_file_bytes=2097152, batch_bytes=4194304, max_files=5),
-                    unsupported=['continuous_driving_recalculation'] if source == 'calendar' else ['pdf_attachments'],
+                    unsupported=['continuous_driving_recalculation'] if source == 'calendar' else ['pdf_attachments', 'list_sections', 'assign_section', 'reparent_existing_reminder', 'promote_reminder_to_top_level'],
                     constraints=dict(all_day_timezone='Mac local timezone; foreign-zone floating days rejected',
                         recurrence_replacement='frequency/interval/count/until plus weekly weekdays; use recurrence_end to preserve selectors',
                         recurrence_end='future scope; non-detached existing series; at most four years and 10000 snapshot events',

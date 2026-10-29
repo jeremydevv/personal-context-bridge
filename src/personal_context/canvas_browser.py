@@ -316,7 +316,7 @@ def run(config_path, database):
             return {**previous, 'state': 'rate_limited'}
         # Use the last complete all-host request count; older status counted API
         # calls only, so estimate file downloads plus redirects on the first run.
-        expected_requests = previous.get('last_success_http_requests') or (
+        expected_requests = previous.get('last_success_http_requests') or previous.get('expected_http_requests') or (
             previous.get('requests_completed', 1000) + 3 * previous.get('counts', {}).get('canvas_file', 100))
         interval = max(config.get('request_interval_seconds', 0.0625),
                        config.get('refresh_target_seconds', 540) / max(1, expected_requests))
@@ -325,6 +325,7 @@ def run(config_path, database):
                 'authentication':'firefox_session','source_writes':False,'phase':'collecting','requests_completed':0,
                 'request_interval_seconds':interval,
                 'refresh_target_seconds':config.get('refresh_target_seconds',540),
+                'expected_http_requests':expected_requests,
                 'last_success_http_requests':previous.get('last_success_http_requests')}
         write_status(status_path,status)
         client=None

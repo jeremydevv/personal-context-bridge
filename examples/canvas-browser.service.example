@@ -1,0 +1,21 @@
+[Unit]
+Description=Read-only browser Canvas collection from private Firefox session
+After=network-online.target personal-context-key-unlock.service
+Wants=personal-context-key-unlock.service
+ConditionPathExists=%t/personal-context-bridge.key
+
+StartLimitIntervalSec=1h
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+Environment=PERSONAL_CONTEXT_KEY_FILE=%t/personal-context-bridge.key
+ExecStart=%h/.local/share/personal-context-bridge/app/.venv/bin/python -m personal_context.canvas_browser --config %h/.config/personal-context-bridge/canvas-browser.json --db %h/.local/share/personal-context-bridge/app/data/context.sqlite3
+TimeoutStartSec=18min
+Restart=on-failure
+RestartSec=60s
+RestartPreventExitStatus=2
+UMask=0077
+NoNewPrivileges=true
+Nice=10
+MemoryMax=2G

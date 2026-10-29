@@ -71,7 +71,16 @@ class BrowserCanvasClient(CanvasClient):
         super().__init__(base_url, 'unused-browser-auth', transport=transport)
         self._download_transport = transport
         self.http.cookies = cookies
-        self.http.event_hooks = {'request': [self._guard]}
+        self.http.event_hooks = {'request': [self._guard], 'response': [self._check_auth_response]}
+
+    @staticmethod
+    def _check_auth_response(response):
+        # Canvas API redirects or an HTML login page require interactive sign-in.
+        # Do not follow redirects or log a response body/session location.
+        if response.status_code in (301, 302, 303, 307, 308) or (
+                response.status_code == 200 and
+                response.headers.get('content-type', '').split(';')[0].strip().lower() == 'text/html'):
+            raise PermissionError('Canvas browser sign-in required')
 
     def _guard(self, request):
         request.headers.pop('authorization', None)
@@ -261,7 +270,7 @@ def run(config_path, database):
                     if request_count % 25 == 0:
                         status.update(requests_completed=request_count, heartbeat_at=datetime.now(timezone.utc).isoformat())
                         write_status(status_path,status)
-            client.http.event_hooks['response']=[progress]
+            client.http.event_hooks.setdefault('response', []).append(progress)
             profile=client.get('/api/v1/users/self/profile')
             if profile.get('id') != config['expected_user_id']:raise PermissionError('Canvas account mismatch')
             batches=collect_batches(client,config['account'],download_files=config.get('download_files',True),extended=True,include_inactive=True)
@@ -303,7 +312,8 @@ def main():
     parser.add_argument('--config',required=True);parser.add_argument('--db',required=True)
     args=parser.parse_args()
     result=run(args.config,args.db);print(json.dumps(result))
-    if result['state'] in ('failed','authentication_required'):raise SystemExit(1)
+    if result['state'] == 'authentication_required':raise SystemExit(2)
+    if result['state'] == 'failed':raise SystemExit(1)
 
 
 if __name__=='__main__':main()

@@ -54,8 +54,13 @@ def register_tools(mcp, common_refresh=True):
 
     if os.environ.get("PERSONAL_CONTEXT_REFRESH_ENABLED") == "1":
         @mcp.tool(annotations=write_request)
-        def force_refresh_canvas() -> dict:
-            """Request a new student Canvas collection on the Mac. Returns durable refresh_id; use data_refresh_status for correlated ingestion. Acceptance does not mean collection finished. This does not submit or edit Canvas work."""
+        def force_refresh_canvas(account: str = "") -> dict:
+            """Refresh Canvas: omit account for Mac high-school collection, or pass the configured browser account (from canvas_status) for Ubuntu Firefox collection. Browser requests return queued; poll canvas_status.browser_collection. Mac requests return durable refresh_id; use data_refresh_status for correlated ingestion. Acceptance does not mean collection finished. This does not submit or edit Canvas work."""
+            if account:
+                from .canvas_browser_mcp import config, refresh_canvas_browser
+                if account != config()["account"]:
+                    raise ValueError("account must be the configured browser account; omit for Mac Canvas")
+                return refresh_canvas_browser()
             return request(["canvas"], source="canvas")
 
     @mcp.tool(annotations=read_only)

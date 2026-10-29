@@ -263,3 +263,5 @@ Available on the main and source MCP surfaces. Read tools appear by default; req
 | [`get_video_storyboard`](tools/get_video_storyboard/README.md) | Read |
 | [`list_saved_videos`](tools/list_saved_videos/README.md) | Read |
 | [`search_saved_videos`](tools/search_saved_videos/README.md) | Read |
+
+Browser-backed Canvas: [`canvas_browser_status`](tools/canvas_browser_status/README.md) · [`refresh_canvas_browser`](tools/refresh_canvas_browser/README.md).

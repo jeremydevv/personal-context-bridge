@@ -25,3 +25,7 @@ This optional action requires its documented private configuration and client ap
 ## Implementation
 
 Defined in `personal_context.canvas_mcp_server`. See [privacy and retention](../../PRIVACY.md).
+
+For the configured Ubuntu browser account, pass `account` from `canvas_status`.
+This queues only browser collection; omitting it preserves Mac collection.
+Poll `canvas_status().browser_collection` for a later success and coverage.

@@ -181,3 +181,50 @@ class FileBoundTests(unittest.TestCase):
         self.assertEqual(MAX_FILE_BYTES,64*1024*1024)
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(ValueError):_write_pdf(tmp,b'%PDF-'+bytes(MAX_FILE_BYTES))
+
+
+class BrowserRefreshTests(unittest.TestCase):
+    def test_held_lock_does_not_launch_second_collector(self):
+        import fcntl
+        from personal_context.canvas_browser_mcp import refresh_canvas_browser
+        with tempfile.TemporaryDirectory() as tmp:
+            settings={'account':'demo','status_file':tmp+'/status'}
+            with open(tmp+'/status.lock','w') as lock:
+                fcntl.flock(lock,fcntl.LOCK_EX | fcntl.LOCK_NB)
+                with patch('personal_context.canvas_browser_mcp.config',return_value=settings), patch('personal_context.canvas_browser_mcp.canvas_browser_status',return_value={}), patch('personal_context.canvas_browser_mcp.subprocess.run') as start:
+                    self.assertEqual(refresh_canvas_browser()['state'],'running')
+                    start.assert_not_called()
+                with patch('personal_context.canvas_browser.load_config',return_value=settings), patch('personal_context.canvas_browser.session_cookies') as cookies:
+                    self.assertEqual(run('unused',tmp+'/db')['state'],'running')
+                    cookies.assert_not_called()
+
+    def test_account_routing_keeps_mac_separate(self):
+        import os
+        from personal_context.canvas_mcp_server import register_tools
+        functions={}
+        class Registry:
+            def tool(self,**kwargs):
+                def save(fn):functions[fn.__name__]=fn;return fn
+                return save
+        with patch.dict(os.environ,{'PERSONAL_CONTEXT_REFRESH_ENABLED':'1'}), patch('personal_context.canvas_browser_mcp.config',return_value={'account':'demo'}), patch('personal_context.canvas_browser_mcp.refresh_canvas_browser',autospec=True,return_value={'state':'queued'}) as browser, patch('personal_context.refresh_mcp.request',return_value={'refresh_id':'fictional'}) as mac:
+            register_tools(Registry())
+            self.assertEqual(functions['force_refresh_canvas'](account='demo')['state'],'queued')
+            mac.assert_not_called()
+            with self.assertRaises(ValueError):functions['force_refresh_canvas'](account='unknown')
+            self.assertEqual(functions['force_refresh_canvas']()['refresh_id'],'fictional')
+            browser.assert_called_once()
+
+    def test_login_html_and_redirect_require_interactive_auth(self):
+        for status,headers in [(200,{'content-type':'text/html; charset=utf-8'}), (302,{}), (307,{})]:
+            client=BrowserCanvasClient('https://school.example.invalid',httpx.Cookies(),
+                transport=httpx.MockTransport(lambda request: httpx.Response(status,headers=headers,content=b'login')))
+            try:
+                with self.assertRaises(PermissionError):client.get('/api/v1/users/self/profile')
+            finally:client.close()
+
+    def test_authentication_exit_prevents_service_retry(self):
+        from personal_context.canvas_browser import main
+        for state,code in [('authentication_required',2),('failed',1)]:
+            with patch('sys.argv',['canvas-browser','--config','unused','--db','unused']), patch('personal_context.canvas_browser.run',return_value={'state':state}), patch('builtins.print'):
+                with self.assertRaises(SystemExit) as error:main()
+                self.assertEqual(error.exception.code,code)

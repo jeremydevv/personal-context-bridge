@@ -24,7 +24,19 @@ Use your installation’s absolute interpreter path and this module in the MCP c
 
 Configure the environment from the detailed setup guide. Standard archive surfaces use `PERSONAL_CONTEXT_DB` and `PERSONAL_CONTEXT_KEY_FILE`; Health/travel and Obsidian use their own documented environment. Prefer the generated private `mcp.json` or [configuration example](../../../examples/mcp.example.json). The stdio command speaks JSON-RPC to a client. For ChatGPT web, use [your own authenticated tunnel](../../CHATGPT.md).
 
+## Browser-backed collection
+
+An existing authenticated Firefox session can collect a separately configured
+Canvas account on Ubuntu, without the Mac. See [browser refresh](../../tools/refresh_canvas_browser/README.md)
+for the hourly service, locking, retries and login status. Existing connector
+catalogs can use `force_refresh_canvas(account="<configured account>")`; omit
+`account` only for Mac collection. No additional tunnel is required when the main
+Personal Context server already exposes Canvas.
+
 ## Tools
+
+- [`canvas_browser_status`](../../tools/canvas_browser_status/README.md)
+- [`refresh_canvas_browser`](../../tools/refresh_canvas_browser/README.md)
 
 - [`canvas_inbox`](../../tools/canvas_inbox/README.md)
 - [`canvas_module_items`](../../tools/canvas_module_items/README.md)

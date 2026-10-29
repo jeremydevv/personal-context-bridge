@@ -1,5 +1,6 @@
 """Browser-backed refresh/status tools alongside the existing Canvas read tools."""
 from datetime import datetime, timezone
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -23,22 +24,40 @@ def browser_status():
     return {'configured':True,'account':settings['account'],'canvas_url':settings['base_url'],**status}
 
 
+def canvas_browser_status() -> dict:
+    """Check Ubuntu Firefox-backed Canvas account, last successful ingestion and auth/coverage state. Browser accounts use this route independently of Mac token collection. Read with existing Canvas tools using the returned account label. A partial snapshot means some school resources are unavailable; authentication_required needs interactive browser sign-in. No credentials are returned."""
+    return browser_status()
+
+def refresh_canvas_browser() -> dict:
+    """Request read-only Canvas collection from the configured Ubuntu Firefox login session, without requiring the Mac. Updates only the encrypted local archive. Returns queued, not completed; poll canvas_browser_status for a new last_success_at and coverage. Never sends messages, submits work, or marks conversations read. Sign in interactively if authentication_required."""
+    settings=config()
+    before=canvas_browser_status()
+    requested_at=datetime.now(timezone.utc).isoformat()
+    # Observe the collector's actual lock, not a possibly stale status file.
+    try:
+        with open(settings['status_file'] + '.lock', 'rb') as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return {'account': settings['account'], 'state': 'running',
+                        'collection_finished': False, 'check': 'canvas_browser_status'}
+    except FileNotFoundError:
+        pass
+    try:
+        result=subprocess.run(['systemctl','--user','start','--no-block','personal-context-canvas-browser.service'],capture_output=True,timeout=15)
+    except (OSError, subprocess.TimeoutExpired):
+        return {'account': settings['account'], 'state': 'unknown',
+                'collection_finished': False, 'error_code': 'browser_worker_unavailable',
+                'check': 'canvas_browser_status'}
+    return {'account':settings['account'],'state':'queued' if result.returncode==0 else 'failed',
+            'requested_at':requested_at,'previous_last_success_at':before.get('last_success_at'),
+            'collection_finished':False,'error_code':None if result.returncode==0 else 'browser_worker_unavailable',
+            'check':'canvas_browser_status'}
+
+
 def register(mcp):
     from mcp.types import ToolAnnotations
-
-    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True,destructiveHint=False,idempotentHint=True,openWorldHint=False))
-    def canvas_browser_status() -> dict:
-        """Check Ubuntu Firefox-backed Canvas account, last successful ingestion and auth/coverage state. Browser accounts use this route independently of Mac token collection. Read with existing Canvas tools using the returned account label. A partial snapshot means some school resources are unavailable; authentication_required needs interactive browser sign-in. No credentials are returned."""
-        return browser_status()
-
-    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False,destructiveHint=False,idempotentHint=True,openWorldHint=False))
-    def refresh_canvas_browser() -> dict:
-        """Request read-only Canvas collection from the configured Ubuntu Firefox login session, without requiring the Mac. Updates only the encrypted local archive. Returns queued, not completed; poll canvas_browser_status for a new last_success_at and coverage. Never sends messages, submits work, or marks conversations read. Sign in interactively if authentication_required."""
-        settings=config()
-        before=canvas_browser_status()
-        requested_at=datetime.now(timezone.utc).isoformat()
-        result=subprocess.run(['systemctl','--user','start','--no-block','personal-context-canvas-browser.service'],capture_output=True,timeout=15)
-        return {'account':settings['account'],'state':'queued' if result.returncode==0 else 'failed',
-                'requested_at':requested_at,'previous_last_success_at':before.get('last_success_at'),
-                'collection_finished':False,'error_code':None if result.returncode==0 else 'browser_worker_unavailable',
-                'check':'canvas_browser_status'}
+    mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False,
+        idempotentHint=True, openWorldHint=False))(canvas_browser_status)
+    mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False,
+        idempotentHint=True, openWorldHint=False))(refresh_canvas_browser)

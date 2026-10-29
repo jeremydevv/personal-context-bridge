@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly browser Canvas archive refresh (independent of Mac)
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=2min
+Persistent=true
+Unit=personal-context-canvas-browser.service
+
+[Install]
+WantedBy=timers.target

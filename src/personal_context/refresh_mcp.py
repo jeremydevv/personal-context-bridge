@@ -1,6 +1,8 @@
 """Common refresh tools; registration and read status never start collection."""
 import os
 
+from .refresh_readiness import source_readiness_metadata
+
 SOURCES = ('calendar', 'reminder', 'contact', 'mail', 'message', 'note',
            'voice_memo', 'canvas', 'obsidian', 'saved_video', 'health',
            'location', 'google_timeline', 'icloud_drive', 'summaries')
@@ -23,7 +25,7 @@ def source_status(source='all', database=None):
         # disclose private configuration paths through an exception string.
         names = SOURCES if source == 'all' else (source,)
         return {'status': 'unavailable', 'configured': False,
-                'sources': {name: {'capability': {'health': 'waiting_for_device', 'location': 'waiting_for_device',
+                'sources': {name: {**source_readiness_metadata(name), 'capability': {'health': 'waiting_for_device', 'location': 'waiting_for_device',
                                                 'google_timeline': 'manual_import_required', 'icloud_drive': 'requires_auth',
                                                 'summaries': 'derived_processing'}.get(name, 'unconfigured'),
                                   'refresh': {'state': 'unavailable'},

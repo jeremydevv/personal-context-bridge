@@ -1,6 +1,11 @@
 # Firefox-backed student Canvas
 
-A second institutional account can use the owner's existing Firefox Canvas sign-in on Ubuntu. It shares the encrypted archive and all Canvas read tools, but refreshes independently of the Mac token collector. No API token is created. This is browser-session-backed structured API collection, not a UI scraper or an autonomous login agent.
+Use this existing browser-session option when your institution does not expose
+personal Canvas API-token creation but permits access through your authenticated
+session. This is an alternative to [API-token collection](SETUP.md#api-token-collection).
+Configure your own institution, account label and pinned user ID.
+
+An institutional account can use the owner's existing Firefox Canvas sign-in on Ubuntu. It shares the encrypted archive and all Canvas read tools, but refreshes independently of the Mac token collector. No API token is created. This is browser-session-backed structured API collection, not a UI scraper or an autonomous login agent.
 
 ## Route
 

@@ -162,6 +162,7 @@ Available on the main and source MCP surfaces. Read tools appear by default; req
 
 | Tool | Access |
 | --- | --- |
+| [`canvas_grades`](tools/canvas_grades/README.md) | Read |
 | [`canvas_inbox`](tools/canvas_inbox/README.md) | Read |
 | [`canvas_module_items`](tools/canvas_module_items/README.md) | Read |
 | [`canvas_modules`](tools/canvas_modules/README.md) | Read |

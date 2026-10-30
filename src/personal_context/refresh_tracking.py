@@ -8,6 +8,8 @@ import time
 import uuid
 from pathlib import Path
 
+from .refresh_readiness import source_readiness_metadata
+
 SOURCES = ('calendar','reminder','contact','mail','message','note','voice_memo','canvas','obsidian','saved_video','health','location','google_timeline','icloud_drive','summaries')
 MAC_SOURCES = SOURCES[:8]
 ACTIVE = ('queued','waiting','running','interrupted')
@@ -216,7 +218,7 @@ class Coordinator:
                 cfg=self.config.get('sources',{}).get(s,{})
                 latest=next((r for r in reversed(list(data['requests'].values())) if s in r['sources']),None)
                 base=data['baselines'].get(s)
-                out[s]={'capability':cfg.get('capability',CAPABILITIES.get(s,'unconfigured')),'enabled':cfg.get('enabled',False),'refresh':self._view(latest,data)['sources'][s] if latest else None,'baseline':base,'freshness':'unknown' if not base else 'fresh' if self.clock()-base['acknowledged_at']<86400 else 'stale','upstream_freshness':self._root_child(data,latest['refresh_id'],s)[1].get('upstream_freshness','unknown') if latest else 'unknown','derived_processing':'separate'}
+                out[s]={**source_readiness_metadata(s),'capability':cfg.get('capability',CAPABILITIES.get(s,'unconfigured')),'enabled':cfg.get('enabled',False),'refresh':self._view(latest,data)['sources'][s] if latest else None,'baseline':base,'freshness':'unknown' if not base else 'fresh' if self.clock()-base['acknowledged_at']<86400 else 'stale','upstream_freshness':self._root_child(data,latest['refresh_id'],s)[1].get('upstream_freshness','unknown') if latest else 'unknown','derived_processing':'separate'}
             return {'configured':bool(self.config.get('sources')),'sources':out}
 
 
@@ -248,4 +250,4 @@ def source_status(source='all',database=None):
         return result
     except (KeyError,FileNotFoundError):
         if source!='all' and source not in SOURCES: raise ValueError('unknown source')
-        return {'configured':False,'sources':{s:{'capability':CAPABILITIES.get(s,'unconfigured'),'freshness':'unknown','refresh':None,'upstream_freshness':'unknown'} for s in SOURCES if source=='all' or s==source}}
+        return {'configured':False,'sources':{s:{**source_readiness_metadata(s),'capability':CAPABILITIES.get(s,'unconfigured'),'freshness':'unknown','refresh':None,'upstream_freshness':'unknown'} for s in SOURCES if source=='all' or s==source}}

@@ -179,14 +179,21 @@ def register_tools(mcp, common_refresh=True):
     def summary_query(operation, **kwargs):
         try:
             from .summary_mcp import query
-        except ImportError:
-            return {'available':False,'state':'summarizer_not_installed'}
+        except ModuleNotFoundError as exc:
+            if exc.name != __package__ + '.summary_mcp':
+                raise
+            return {'available': False, 'state': 'unsupported_capability',
+                    'reason': 'summary_backend_not_distributed',
+                    'hint': 'This public distribution does not include the optional explanation backend. Read original Canvas records instead; changing Wi-Fi or collection settings does not install it.',
+                    'alternative_tools': ['search_canvas', 'list_canvas_records', 'get_canvas_record']}
         return query(operation, **kwargs)
 
     @mcp.tool(annotations=read_only)
     def canvas_summary_status() -> dict:
-        """Check generated Canvas explanation coverage separately from source syncing. Existing summary processing may run while collection is paused; new Canvas feature processing requires explicit Wi-Fi resume configuration. Pending/unavailable is not summarized. Generated text is unverified; read exact source citations."""
+        """Check optional generated Canvas explanation coverage separately from source syncing. The public distribution does not include the explanation backend; unavailable results direct you to source-reading tools. With a separately supplied backend, existing summary processing may run while collection is paused; new Canvas feature processing requires explicit Wi-Fi resume configuration. Pending/unavailable is not summarized. Generated text is unverified; read exact source citations."""
         result=summary_query('status')
+        if result.get('available') is False:
+            return {**result, 'new_canvas_processing': 'unavailable'}
         if 'sources' in result:
             result['sources']={k:v for k,v in result['sources'].items() if k in CANVAS_KINDS}
             result['total_units']=sum(sum(v.get('states',{}).values()) for v in result['sources'].values())
@@ -198,7 +205,7 @@ def register_tools(mcp, common_refresh=True):
 
     @mcp.tool(annotations=read_only)
     def canvas_search_explanations(query: str = "", kind: str = "", limit: int = 10, offset: int = 0) -> dict:
-        """Search AI-generated Canvas explanations with source references, separately from source text. kind filters a Canvas source kind (e.g. submission, page, discussion, assignment). For all Canvas sources omit kind. Results can be incomplete/stale; check canvas_summary_status and follow source IDs with get_canvas_record. Generated claims are unverified and never replace original content."""
+        """Search optional AI-generated Canvas explanations with source references, separately from source text. The public distribution does not include the explanation backend; use search_canvas for source text. kind filters a Canvas source kind (e.g. submission, page, discussion, assignment). For all Canvas sources omit kind. Results can be incomplete/stale; check canvas_summary_status and follow source IDs with get_canvas_record. Generated claims are unverified and never replace original content."""
         if kind and kind not in KINDS:raise ValueError('invalid Canvas kind')
         limit,offset=min(max(int(limit),1),50),max(int(offset),0)
         if kind:return summary_query('search',query=query,source='canvas_'+kind,limit=limit,offset=offset)
@@ -213,8 +220,10 @@ def register_tools(mcp, common_refresh=True):
 
     @mcp.tool(annotations=read_only)
     def get_canvas_explanation(summary_id: str, evidence_offset: int = 0, evidence_limit: int = 5) -> dict:
-        """Read one exact generated Canvas summary and its source citation table, plus a bounded page of input evidence. Follow evidence.next_offset until eof. Facts/actions cite zero-based refs indices. Verify original Canvas IDs/digests before relying on generated claims; explanations are unverified snapshots, not live Canvas state."""
+        """Read one exact optional generated Canvas summary and its source citation table, plus a bounded page of input evidence. The public distribution does not include the explanation backend; use get_canvas_record for originals. Follow evidence.next_offset until eof. Facts/actions cite zero-based refs indices. Verify original Canvas IDs/digests before relying on generated claims; explanations are unverified snapshots, not live Canvas state."""
         result=summary_query('get',id=summary_id,include_sources=True)
+        if result.get('available') is False:
+            return result
         summary=result.get('summary') or {}
         if summary.get('source') not in CANVAS_KINDS:
             return {'found':False,'state':'Canvas explanation unavailable'}

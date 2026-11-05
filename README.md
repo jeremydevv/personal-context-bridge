@@ -158,8 +158,10 @@ See [choose your machines](docs/SETUP.md#choose-your-machines) before installing
 
 Most tools read collected snapshots. Obsidian reads your configured vault files;
 iCloud Drive uses an authorized, reachable Mac and does not create an offline mirror.
-An optional background worker can produce summaries, keeping generated text
-separate from source records. Confirm important details against the original.
+Canvas explanation tools are compatibility hooks for an optional backend that is
+not included in this public distribution. They report unsupported capability when
+it is absent; source search and reads still work. See [Canvas availability](docs/resources/canvas/README.md#optional-generated-explanations).
+Confirm important details against the original.
 
 If your Mac sleeps or disconnects, the host can still search records already
 collected. New Apple collection and native actions wait for the Mac to be

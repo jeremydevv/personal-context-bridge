@@ -11,6 +11,26 @@ The experimental Rclone authentication setup below remains an independent local
 test path. Its listing verification does **not** verify the guarded MCP connection.
 See the native receiver section for required connection/permission checks.
 
+## Reading refresh status truthfully
+
+The common `data_source_status` / `data_refresh` iCloud entry describes refresh
+coordination, not native connection readiness. The legacy capability value
+`requires_auth` is a classification, **not an observed failed authentication**;
+`enabled` controls refresh configuration, not the native connection. Status adds
+`capability_scope=refresh_coordination`, `native_authentication=not_checked` and
+`native_access=not_checked` to make this distinction explicit, including when the
+refresh ledger is unavailable.
+
+Use `icloud_drive_status(probe=false)` for setup metadata. Its experimental Rclone
+setup state is separate from `native_access_enabled`; neither establishes live
+native access. `probe=true` additionally contacts the native receiver and performs
+a bounded allowed listing. Do not perform that probe merely to read metadata.
+
+The main MCP registers the eleven iCloud tool names independently of native
+runtime enablement. Missing client-discovered names require checking the existing
+server deployment/catalog and app discovery; they do not establish failed login,
+and must not be remedied by automatically enabling access or adding credentials.
+
 ## Experimental Linux authentication
 
 The community branch at https://github.com/thisiscamk/rclone/tree/iclouddrive-yubikey-testing

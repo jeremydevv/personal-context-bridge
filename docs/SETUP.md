@@ -139,9 +139,28 @@ permissions. Use FileVault and keep those spools outside source repositories.
 
 ## Canvas
 
+Choose one of two existing collection modes:
+
+- **API token:** use the portable collector below when your institution permits
+  personal API-token creation.
+- **Firefox browser session:** if your institution does not expose
+  personal API-token creation, the [Firefox-backed collector](canvas-browser.md)
+  can use your existing authenticated Canvas session on Ubuntu, where permitted
+  by institutional policy. It creates no token and does not require a Mac.
+  Follow that guide's separate private configuration and command instead of the
+  token configuration below.
+
+Both modes feed the encrypted archive and Canvas read tools. Browser-backed
+collection still uses permission-limited structured API reads; it does not bypass
+SSO/MFA or institutional restrictions. You sign in interactively and renew an
+expired session yourself. Access to external LTI platforms is not guaranteed.
+
+### API-token collection
+
 Create a personal API access token through your institution's Canvas account
 settings if that option is enabled. Institution policy may prevent token creation.
-This portable collector uses a bearer token, not browser-cookie extraction.
+The token-backed collector described in this subsection uses a bearer token,
+not browser-session authentication.
 Keep the token in the `token_file` named by your private `canvas.json`; create it
 with mode 0600 and never put the token in shell arguments or Git.
 

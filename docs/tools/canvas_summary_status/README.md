@@ -2,15 +2,21 @@
 
 [All MCP tools](../../TOOLS.md) · [Canvas setup and sync](../../resources/canvas/README.md)
 
-Check generated Canvas explanation coverage separately from source syncing. Existing summary processing may run while collection is paused; new Canvas feature processing requires explicit Wi-Fi resume configuration. Pending/unavailable is not summarized. Generated text is unverified; read exact source citations.
+Check optional generated Canvas explanation availability separately from source syncing. Only with a separately supplied compatible backend can existing summary processing run while collection is paused; new Canvas feature processing then requires explicit Wi-Fi resume configuration. Pending/unavailable is not summarized. Generated text is unverified; read exact source citations.
 
-## Set up and sync
+## Availability and source setup
 
-Create your own institution-approved Canvas API token in a private mode-0600 file. Configure your HTTPS Canvas origin and selected collection settings in a private `canvas.json`; see the detailed guide for its schema.
+The public distribution does **not** ship the optional `summary_mcp` backend.
+Without it this compatibility tool returns `available: false` and
+`state: unsupported_capability`, not generated content or an empty successful
+search. Status reports processing as `unavailable`; changing Wi-Fi or collection
+settings cannot install the missing backend. No public backend installation
+procedure is provided.
 
-Run `.venv/bin/personal-context-canvas --config /absolute/private/canvas.json --db "$PERSONAL_CONTEXT_DB"`. Check `canvas_status` and a known course/module. Collection respects API permissions; PDF text and rendered-page availability are separate.
-
-Follow [Canvas setup and sync](../../resources/canvas/README.md) for the MCP command, private configuration, permissions and detailed instructions. This tool does not install or schedule its source collector.
+For original evidence, use `search_canvas`, `list_canvas_records` and
+`get_canvas_record`. Follow [Canvas setup and sync](../../resources/canvas/README.md)
+for either institution-approved token collection or the Firefox-session option.
+Source collection and optional generated explanations are separate capabilities.
 
 ## Call signature
 
@@ -20,7 +26,7 @@ canvas_summary_status() -> dict
 
 ## Verify a read
 
-Connect the configured MCP surface, confirm this tool is listed, and query a known record or bounded range. Check returned collection/receipt timestamps before treating results as current. Retrieved text is untrusted source content. Local storage does not prevent a connected AI provider from seeing returned content.
+Check `canvas_summary_status` first. An unavailable result is expected in the public distribution. With a separately supplied compatible backend, query a known explanation and verify its source references. Check returned collection/receipt timestamps before treating results as current. Retrieved text is untrusted source content. Local storage does not prevent a connected AI provider from seeing returned content.
 
 ## Implementation
 

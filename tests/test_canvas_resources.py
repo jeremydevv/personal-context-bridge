@@ -111,7 +111,8 @@ class CanvasResourcesTests(unittest.TestCase):
                 self.assertIsNotNone(functions['get_canvas_record']('grading_period','canvas:demo:grading_period:7:61')['record'])
                 self.assertEqual(functions['canvas_status']()['accounts']['demo']['submission_count'],1)
                 self.assertIn('canvas_search_explanations',functions)
-                self.assertEqual(functions['canvas_summary_status']()['new_canvas_processing'],'paused_until_wifi')
+                with patch.dict('sys.modules', {'personal_context.summary_mcp': None}):
+                    self.assertEqual(functions['canvas_summary_status']()['new_canvas_processing'],'unavailable')
             store=Store(db,key_file=key)
             store.ingest(dict(common,collected_at='2026-01-02T00:00:00Z',records=[]))
             self.assertEqual(store.search('reasoning','canvas_submission'),[])

@@ -153,13 +153,16 @@ class Coordinator:
             if rid not in data['requests']: return {'refresh_id':rid,'state':'unknown','requested':False}
             return self._view(data['requests'][rid], data)
 
-    def claim(self,owner):
+    def claim(self,owner,lane='all'):
+        if lane not in ('all','mac','local','obsidian','saved_video'): raise ValueError('invalid refresh lane')
         now=self.clock()
         with self.locked() as data:
             for rid,r in data['requests'].items():
                 for source,j in r['sources'].items():
                     if j.get('joined_to'): continue
                     if j.get('capability') not in ('mac','local_command'): continue
+                    if lane in ('mac','local') and j.get('capability') != ('mac' if lane == 'mac' else 'local_command'): continue
+                    if lane in ('obsidian','saved_video') and (source != lane or j.get('capability') != 'local_command'): continue
                     if j['state']=='running' and j.get('lease_until',0)<=now:
                         j.update(state='interrupted',error_code='lease_expired',retry_at=now,interruptions=j.get('interruptions',0)+1)
                         if j['interruptions']>=3:
@@ -168,6 +171,17 @@ class Coordinator:
                         j.update(state='running',phase='collecting',attempts=j['attempts']+1,attempt_id=uuid.uuid4().hex,lease_owner=owner,lease_until=now+3700,heartbeat=now)
                         return dict(j,refresh_id=rid,mode=r['mode'])
         return None
+
+    def wake_mac_reconnect(self):
+        """Release device-offline backoff without disturbing running or busy jobs."""
+        now=self.clock(); count=0
+        with self.locked() as data:
+            for r in data['requests'].values():
+                for j in r['sources'].values():
+                    if (not j.get('joined_to') and (j.get('capability')=='mac' or self.config.get('sources',{}).get(j.get('source'),{}).get('requires_mac') is True)
+                        and j.get('state')=='waiting' and j.get('error_code')=='device_unavailable'):
+                        j['retry_at']=now; count+=1
+        return count
 
     def heartbeat(self,job):
         with self.locked() as data:

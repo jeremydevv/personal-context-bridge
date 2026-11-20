@@ -13,6 +13,32 @@ class RefreshTests(unittest.TestCase):
         a=self.c.request(['calendar']); b=self.c.request(['calendar'])
         self.assertEqual(a['refresh_id'],b['refresh_id'])
         self.assertEqual(Coordinator(self.state,{},clock=lambda:101).status(a['refresh_id'])['state'],'queued')
+    def test_local_lane_bypasses_running_mac_without_double_claim(self):
+        self.c.config['sources']['obsidian']={'enabled':True,'capability':'local_command'}
+        self.c.request(['calendar']); self.c.request(['obsidian'])
+        mac=self.c.claim('mac',lane='mac'); local=self.c.claim('local',lane='local')
+        self.assertEqual((mac['source'],local['source']),('calendar','obsidian'))
+        self.assertIsNone(self.c.claim('other',lane='local'))
+    def test_reconnect_only_releases_device_offline_backoff(self):
+        self.c.config['sources']['message']={'enabled':True,'capability':'mac'}
+        a=self.c.request(['calendar']); b=self.c.request(['message'])
+        first=self.c.claim('one'); self.c.finish(first,{'retryable':True})
+        second=self.c.claim('two'); self.c.finish(second,{'retryable':True,'error_code':'collection_busy','phase':'waiting_for_resource'})
+        self.assertEqual(self.c.wake_mac_reconnect(),1)
+        self.assertEqual(self.c.status(a['refresh_id'])['sources']['calendar']['retry_at'],100)
+        self.assertGreater(self.c.status(b['refresh_id'])['sources']['message']['retry_at'],100)
+    def test_reconnect_wakes_mac_dependent_local_job(self):
+        self.c.config['sources']['obsidian']={'enabled':True,'capability':'local_command','requires_mac':True}
+        r=self.c.request(['obsidian']); job=self.c.claim('local',lane='local')
+        self.c.finish(job,{'retryable':True,'error_code':'device_unavailable'})
+        self.assertEqual(self.c.wake_mac_reconnect(),1)
+        self.assertEqual(self.c.status(r['refresh_id'])['sources']['obsidian']['retry_at'],100)
+    def test_individual_local_sources_have_independent_lanes(self):
+        for name in ('obsidian','saved_video'):
+            self.c.config['sources'][name]={'enabled':True,'capability':'local_command'}
+            self.c.request([name])
+        self.assertEqual(self.c.claim('video',lane='saved_video')['source'],'saved_video')
+        self.assertEqual(self.c.claim('vault',lane='obsidian')['source'],'obsidian')
     def test_receipt_correlation_and_partial(self):
         r=self.c.request(['calendar']); job=self.c.claim('worker')
         self.c.finish(job, {'batch_ids':['a'], 'acked_batch_ids':[], 'coverage':'complete'})
@@ -96,6 +122,48 @@ class ReceiptTests(unittest.TestCase):
             store.close()
 
 class WorkerTests(unittest.TestCase):
+    def test_mac_dispatch_uses_ssh_keepalives(self):
+        from unittest.mock import patch
+        from personal_context.refresh_worker import dispatch
+        import json
+        job={'refresh_id':'a'*32,'attempt_id':'b'*32,'source':'calendar','mode':'recent'}
+        config={'mac_target':'fixture@host.invalid','mac_python':'/bin/python','mac_config':'/tmp/fictional','sources':{'calendar':{'capability':'mac'}}}
+        receipt=dict(job,collection_finished=True,coverage='complete')
+        with patch('personal_context.refresh_worker.bounded_run',return_value=json.dumps(receipt)) as run:
+            dispatch(job,config)
+        argv=run.call_args.args[0]
+        self.assertIn('ServerAliveInterval=10',argv)
+        self.assertIn('ServerAliveCountMax=2',argv)
+    def test_mac_dependent_local_job_retries_when_device_offline(self):
+        from unittest.mock import patch
+        from personal_context.refresh_worker import dispatch
+        job={'refresh_id':'a'*32,'attempt_id':'b'*32,'source':'obsidian','mode':'recent'}
+        config={'sources':{'obsidian':{'capability':'local_command','requires_mac':True,'command':['/bin/true']}}}
+        with patch('personal_context.refresh_worker.mac_reachable',return_value=False), patch('personal_context.refresh_worker.bounded_run') as runner:
+            result=dispatch(job,config)
+        self.assertEqual(result,{'retryable':True,'error_code':'device_unavailable'})
+        runner.assert_not_called()
+    def test_reconnect_wakes_on_initial_online_and_offline_to_online_only(self):
+        from unittest.mock import patch,Mock
+        from personal_context.refresh_worker import reconnect_check
+        c=Mock(); c.config={'mac_target':'fixture@host.invalid'}; c.wake_mac_reconnect.return_value=1
+        with tempfile.TemporaryDirectory() as root, patch.dict('os.environ',{'XDG_RUNTIME_DIR':root}), patch('personal_context.refresh_worker.subprocess.run') as probe:
+            probe.return_value.returncode=0
+            self.assertEqual(reconnect_check(c),1)
+            self.assertEqual(reconnect_check(c),0)
+            probe.return_value.returncode=255
+            self.assertEqual(reconnect_check(c),0)
+            probe.return_value.returncode=0
+            self.assertEqual(reconnect_check(c),1)
+            self.assertEqual(c.wake_mac_reconnect.call_count,2)
+    def test_reconnect_retries_if_ledger_temporarily_unavailable(self):
+        from unittest.mock import patch,Mock
+        from personal_context.refresh_worker import reconnect_check
+        c=Mock(); c.config={'mac_target':'fixture@host.invalid'}
+        c.wake_mac_reconnect.side_effect=[RuntimeError('refresh_ledger_busy'),1]
+        with tempfile.TemporaryDirectory() as root, patch.dict('os.environ',{'XDG_RUNTIME_DIR':root}), patch('personal_context.refresh_worker.mac_reachable',return_value=True):
+            with self.assertRaises(RuntimeError): reconnect_check(c)
+            self.assertEqual(reconnect_check(c),1)
     def test_local_zero_exit_without_owned_receipt_is_partial(self):
         from unittest.mock import patch
         from personal_context.refresh_worker import dispatch

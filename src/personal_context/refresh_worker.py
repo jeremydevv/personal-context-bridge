@@ -150,9 +150,23 @@ def bounded_run(argv,timeout=3600,env=None):
         return out.read(65537).decode('utf-8')
 
 
+def mac_reachable(config):
+    target=config.get('mac_target','')
+    if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.-]*@[A-Za-z0-9][A-Za-z0-9.-]*',target):
+        raise ValueError('private_mac_runtime_unconfigured')
+    try:
+        result=subprocess.run(['ssh','-T','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes',
+                               '-o','ConnectTimeout=5','-o','ConnectionAttempts=1',target,'true'],
+                              stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=8)
+        return result.returncode==0
+    except (OSError,subprocess.TimeoutExpired): return False
+
+
 def dispatch(job,config):
     source=job['source'];cfg=config.get('sources',{}).get(source,{})
     if cfg.get('capability')=='local_command':
+        if cfg.get('requires_mac') is True and not mac_reachable(config):
+            return {'retryable':True,'error_code':'device_unavailable'}
         argv=cfg.get('command')
         if not isinstance(argv,list) or not argv or any(not isinstance(a,str) for a in argv) or not Path(argv[0]).is_absolute(): raise ValueError('invalid_private_command')
         root=Path(os.environ.get('PERSONAL_CONTEXT_REFRESH_DIR',Path.home()/'.local/share/personal-context-refresh'))
@@ -161,8 +175,13 @@ def dispatch(job,config):
         env=dict(os.environ)
         env.update(source_env)
         env.update(PERSONAL_CONTEXT_REFRESH_ID=job['refresh_id'],PERSONAL_CONTEXT_REFRESH_ATTEMPT=job['attempt_id'],PERSONAL_CONTEXT_REFRESH_SOURCE=source)
-        with resource_lock(root/(source+'-collection.lock')):
-            output=bounded_run(argv,timeout=min(int(cfg.get('timeout',3600)),3600),env=env)
+        try:
+            with resource_lock(root/(source+'-collection.lock')):
+                output=bounded_run(argv,timeout=min(int(cfg.get('timeout',3600)),3600),env=env)
+        except (CommandFailed,RuntimeError):
+            if cfg.get('requires_mac') is True and not mac_reachable(config):
+                return {'retryable':True,'error_code':'device_unavailable'}
+            raise
         # Exit zero alone does not prove that a pipeline collected its selected scopes.
         for line in reversed(output.splitlines()):
             try: receipt=json.loads(line)
@@ -183,7 +202,7 @@ def dispatch(job,config):
     action='--enqueue-mac-inbox' if dispatch_mode=='launchd' else '--run-mac'
     remote=shlex.join(['env']+[k+'='+v for k,v in remote_env.items()]+[python,'-m','personal_context.refresh_worker',action,'--source',source,'--refresh-id',job['refresh_id'],'--attempt-id',job['attempt_id'],'--mode',job['mode'],'--config',path])
     try:
-        raw=bounded_run(['ssh','-T','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=5','-o','ConnectionAttempts=1',target,remote],timeout=3650)
+        raw=bounded_run(['ssh','-T','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=5','-o','ConnectionAttempts=1','-o','ServerAliveInterval=10','-o','ServerAliveCountMax=2',target,remote],timeout=3650)
         result=json.loads(raw)
         if any(result.get(k)!=job[k] for k in ('refresh_id','attempt_id','source')):
             return {'error_code':'collector_identity_mismatch','coverage':'unknown'}
@@ -194,8 +213,8 @@ def dispatch(job,config):
     except (RuntimeError,ValueError): return {'coverage':'unknown','error_code':'collector_timeout_or_invalid_result'}
 
 
-def once(c=None):
-    c=c or coordinator();c.schedule();job=c.claim(uuid.uuid4().hex)
+def once(c=None,lane='all'):
+    c=c or coordinator();c.schedule();job=c.claim(uuid.uuid4().hex,lane=lane)
     if not job: return False
     stop=threading.Event()
     def heartbeat():
@@ -212,6 +231,18 @@ def once(c=None):
         stop.set();keeper.join(timeout=1)
 
     return True
+
+
+def reconnect_check(c=None):
+    """Probe the configured SSH endpoint and wake only offline retries on a transition."""
+    c=c or coordinator()
+    root=Path(os.environ.get('XDG_RUNTIME_DIR',f'/run/user/{os.getuid()}'))
+    marker=root/'personal-context-mac-reachable'
+    online=mac_reachable(c.config)
+    previous=marker.read_text() if marker.exists() else ''
+    woken=c.wake_mac_reconnect() if online and previous!='online' else 0
+    marker.write_text('online' if online else 'offline'); marker.chmod(0o600)
+    return woken
 
 
 def enqueue_scheduled(group,mode='recent',config_path=None):
@@ -288,6 +319,8 @@ def enqueue_scheduled(group,mode='recent',config_path=None):
 
 def main(argv=None):
     p=argparse.ArgumentParser();p.add_argument('--once',action='store_true');p.add_argument('--enqueue-mac-inbox',action='store_true');p.add_argument('--drain-mac-inbox',action='store_true');p.add_argument('--wait-seconds',type=float,default=3600);p.add_argument('--enqueue-scheduled',choices=['apple','canvas']);p.add_argument('--request-scheduled',choices=['apple','canvas','obsidian','saved_video']);p.add_argument('--request-id');p.add_argument('--run-mac',action='store_true');p.add_argument('--source');p.add_argument('--refresh-id');p.add_argument('--attempt-id');p.add_argument('--mode',default='recent',choices=['recent','full']);p.add_argument('--config')
+    p.add_argument('--lane',choices=['all','mac','local','obsidian','saved_video'],default='all')
+    p.add_argument('--reconnect-check',action='store_true')
     args=p.parse_args(argv)
     if args.enqueue_mac_inbox:
         from .refresh_mac_inbox import enqueue
@@ -315,7 +348,9 @@ def main(argv=None):
         signal.alarm(0)
         result.update(refresh_id=args.refresh_id,attempt_id=args.attempt_id,source=args.source)
         print(json.dumps(result));return 0
+    if args.reconnect_check:
+        reconnect_check(); return 0
     if not args.once: p.error('--once required')
-    once();return 0
+    once(lane=args.lane);return 0
 
 if __name__=='__main__': raise SystemExit(main())

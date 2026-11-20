@@ -234,13 +234,12 @@ def once(c=None,lane='all'):
 
 
 def reconnect_check(c=None):
-    """Probe the configured SSH endpoint and wake only offline retries on a transition."""
+    """Probe the configured SSH endpoint and wake device-offline retries when reachable."""
     c=c or coordinator()
     root=Path(os.environ.get('XDG_RUNTIME_DIR',f'/run/user/{os.getuid()}'))
     marker=root/'personal-context-mac-reachable'
     online=mac_reachable(c.config)
-    previous=marker.read_text() if marker.exists() else ''
-    woken=c.wake_mac_reconnect() if online and previous!='online' else 0
+    woken=c.wake_mac_reconnect() if online else 0
     marker.write_text('online' if online else 'offline'); marker.chmod(0o600)
     return woken
 

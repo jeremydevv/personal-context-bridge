@@ -143,19 +143,19 @@ class WorkerTests(unittest.TestCase):
             result=dispatch(job,config)
         self.assertEqual(result,{'retryable':True,'error_code':'device_unavailable'})
         runner.assert_not_called()
-    def test_reconnect_wakes_on_initial_online_and_offline_to_online_only(self):
+    def test_reconnect_wakes_device_waits_when_online(self):
         from unittest.mock import patch,Mock
         from personal_context.refresh_worker import reconnect_check
         c=Mock(); c.config={'mac_target':'fixture@host.invalid'}; c.wake_mac_reconnect.return_value=1
         with tempfile.TemporaryDirectory() as root, patch.dict('os.environ',{'XDG_RUNTIME_DIR':root}), patch('personal_context.refresh_worker.subprocess.run') as probe:
             probe.return_value.returncode=0
             self.assertEqual(reconnect_check(c),1)
-            self.assertEqual(reconnect_check(c),0)
+            self.assertEqual(reconnect_check(c),1)
             probe.return_value.returncode=255
             self.assertEqual(reconnect_check(c),0)
             probe.return_value.returncode=0
             self.assertEqual(reconnect_check(c),1)
-            self.assertEqual(c.wake_mac_reconnect.call_count,2)
+            self.assertEqual(c.wake_mac_reconnect.call_count,3)
     def test_reconnect_retries_if_ledger_temporarily_unavailable(self):
         from unittest.mock import patch,Mock
         from personal_context.refresh_worker import reconnect_check

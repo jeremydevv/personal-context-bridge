@@ -80,6 +80,43 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(2, self.store.version_count("calendar", "event-1"))
         self.assertTrue(self.store.get("calendar", "event-1", include_deleted=True)["deleted"])
 
+    def test_messages_keep_missing_records_and_previous_body_on_partial_snapshot(self):
+        def batch(records, at):
+            return {"schema": 1, "source": "apple-local", "kind": "message",
+                    "scope": "messages:bucket:0", "collected_at": at,
+                    "complete": True, "records": records}
+        old = {"id": "old", "title": "Message", "body": "previous text",
+               "payload": {"text": "previous text", "contentAvailable": True,
+                           "attachments": [{"guid": "attachment-1", "name": "photo"}]}}
+        other = {"id": "other", "title": "Message", "body": "older message",
+                 "payload": {"text": "older message", "contentAvailable": True, "attachments": []}}
+        self.store.ingest(batch([old, other], "2026-10-01T00:00:00Z"))
+        partial = {"id": "old", "title": "Message", "body": "", "payload":
+                   {"text": "", "contentAvailable": False, "attachments": []}}
+        new = {"id": "new", "title": "Message", "body": "new message", "payload":
+               {"text": "new message", "contentAvailable": True, "attachments": []}}
+        self.store.ingest(batch([partial, new], "2026-10-02T00:00:00Z"))
+        self.assertEqual("previous text", self.store.get("message", "old")["payload"]["text"])
+        self.assertEqual("attachment-1", self.store.get("message", "old")["payload"]["attachments"][0]["guid"])
+        self.assertIsNotNone(self.store.get("message", "other"))
+        self.assertIsNotNone(self.store.get("message", "new"))
+        self.assertEqual(["old"], [r["id"] for r in self.store.search("previous text", kind="message")])
+
+    def test_restore_retired_messages_restores_search_and_marks_source_absent(self):
+        batch = {"schema": 1, "source": "apple-local", "kind": "message", "scope": "messages:bucket:0",
+                 "collected_at": "2026-10-01T00:00:00Z", "complete": True,
+                 "records": [{"id": "old", "title": "Message", "body": "historical words",
+                              "payload": {"text": "historical words", "contentAvailable": True}}]}
+        self.store.ingest(batch)
+        self.store.db.execute("UPDATE records SET deleted=1 WHERE kind='message' AND id='old'")
+        self.store.db.execute("DELETE FROM records_fts WHERE kind='message' AND id='old'")
+        self.store.db.execute("DELETE FROM record_identifiers WHERE kind='message' AND id='old'")
+        self.store.db.commit()
+        self.assertEqual(1, self.store.restore_retired_messages())
+        self.assertEqual(0, self.store.restore_retired_messages())
+        self.assertEqual(['old'], [r['id'] for r in self.store.search('historical words', kind='message')])
+        self.assertTrue(self.store.db.execute("SELECT 1 FROM message_source_absences WHERE id='old'").fetchone())
+
     def test_incomplete_scan_does_not_delete_missing_record(self):
         self.store.ingest(self.batch([self.event()]))
         partial = self.batch([], "2026-10-01T20:00:00Z")

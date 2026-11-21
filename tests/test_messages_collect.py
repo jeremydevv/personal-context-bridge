@@ -42,7 +42,7 @@ class MessagesCollectorTests(unittest.TestCase):
         connection.commit()
         return connection
 
-    def test_complete_snapshot_and_tombstone(self):
+    def test_complete_snapshot_preserves_missing_message(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "chat.db"
             source = self.fixture(path)
@@ -62,8 +62,8 @@ class MessagesCollectorTests(unittest.TestCase):
                 updated, _ = collect_messages(path, "2026-10-02T00:00:00Z")
                 for batch in updated:
                     store.ingest(batch)
-                self.assertIsNone(store.get("message", "message-2"))
-                self.assertEqual(2, store.version_count("message", "message-2"))
+                self.assertIsNotNone(store.get("message", "message-2"))
+                self.assertEqual(1, store.version_count("message", "message-2"))
             finally:
                 store.close()
                 source.close()

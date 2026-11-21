@@ -141,6 +141,7 @@ class ProposalPipeline:
             # one second, then compare exact timestamps before fetching any payload.
             query = ("SELECT id,start FROM records WHERE kind='message' "
                      "AND source='apple-local' AND deleted=0 "
+                     "AND NOT EXISTS (SELECT 1 FROM message_source_absences a WHERE a.id=records.id) "
                      "AND julianday(start)>=julianday(?) AND julianday(start)<julianday(?)")
             params = [(start_time - timedelta(seconds=1)).isoformat(),
                       (end_time + timedelta(seconds=1)).isoformat()]
@@ -226,7 +227,8 @@ class ProposalPipeline:
         for stored in self.db.execute('SELECT document FROM evidence WHERE proposal_id=? ORDER BY record_id', (item['id'],)):
             e = json.loads(stored[0])
             record = self.archive.db.execute("SELECT id,payload,digest,start FROM records WHERE kind='message' "
-                                             "AND source='apple-local' AND id=? AND deleted=0", (e['record_id'],)).fetchone()
+                                             "AND source='apple-local' AND id=? AND deleted=0 AND NOT EXISTS "
+                                             "(SELECT 1 FROM message_source_absences a WHERE a.id=records.id)", (e['record_id'],)).fetchone()
             if not record or record['digest'] != e['source_digest'] or item['policy'] != POLICY:
                 continue
             record = dict(record, payload=json.loads(record['payload']))
@@ -239,7 +241,8 @@ class ProposalPipeline:
             if e.get('context_record_id'):
                 context_row = self.archive.db.execute(
                     "SELECT id,payload,digest,start FROM records WHERE kind='message' "
-                    "AND source='apple-local' AND id=? AND deleted=0", (e['context_record_id'],)).fetchone()
+                    "AND source='apple-local' AND id=? AND deleted=0 AND NOT EXISTS "
+                    "(SELECT 1 FROM message_source_absences a WHERE a.id=records.id)", (e['context_record_id'],)).fetchone()
                 if not context_row or context_row['digest'] != e['context_digest']:
                     continue
                 context = dict(context_row, payload=json.loads(context_row['payload']))
@@ -248,7 +251,8 @@ class ProposalPipeline:
                 interrupted = False
                 for other in self.archive.db.execute(
                         "SELECT id,start FROM records WHERE kind='message' AND source='apple-local' "
-                        "AND deleted=0 AND julianday(start)>=julianday(?) AND julianday(start)<=julianday(?)",
+                        "AND deleted=0 AND NOT EXISTS (SELECT 1 FROM message_source_absences a WHERE a.id=records.id) "
+                        "AND julianday(start)>=julianday(?) AND julianday(start)<=julianday(?)",
                         ((context_time-timedelta(seconds=1)).isoformat(), (answer_time+timedelta(seconds=1)).isoformat())):
                     if other['id'] in (context['id'], record['id']):
                         continue

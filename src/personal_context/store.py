@@ -139,6 +139,9 @@ class Store:
                 deleted INTEGER NOT NULL DEFAULT 0, captured_at TEXT NOT NULL,
                 PRIMARY KEY (kind, id)
             );
+            CREATE TABLE IF NOT EXISTS message_source_absences (
+                id TEXT PRIMARY KEY, observed_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS canvas_pdfs (
                 record_id TEXT PRIMARY KEY, data BLOB NOT NULL
             );
@@ -210,6 +213,30 @@ class Store:
 
     def close(self):
         self.db.close()
+
+    def restore_retired_messages(self):
+        """Restore retained local Messages rows as historical, source-absent records."""
+        timestamp = datetime.now(timezone.utc).isoformat()
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            rows = self.db.execute(
+                "SELECT * FROM records WHERE kind='message' AND source='apple-local' AND deleted=1"
+            ).fetchall()
+            for row in rows:
+                payload = json.loads(row['payload'])
+                self.db.execute("UPDATE records SET deleted=0 WHERE kind='message' AND id=?", (row['id'],))
+                self.db.execute("INSERT OR IGNORE INTO message_source_absences(id,observed_at) VALUES(?,?)",
+                                (row['id'], timestamp))
+                self.db.execute("INSERT INTO records_fts(kind,id,title,body) VALUES('message',?,?,?)",
+                                (row['id'], row['title'], row['body']))
+                self.db.executemany("INSERT OR IGNORE INTO record_identifiers(kind,id,identifier,role,group_chat) VALUES(?,?,?,?,?)",
+                                    (('message', row['id'], identifier, role, int(group))
+                                     for identifier, role, group in correspondence_identifiers('message', payload)))
+                snapshot = {key: (payload if key == 'payload' else row[key]) for key in
+                            ('id', 'kind', 'source', 'scope', 'title', 'body', 'start', 'end', 'payload')}
+                self.db.execute("INSERT INTO versions(kind,id,captured_at,deleted,snapshot) VALUES('message',?,?,0,?)",
+                                (row['id'], timestamp, json.dumps(snapshot, sort_keys=True, separators=(',', ':'), ensure_ascii=False)))
+        return len(rows)
 
     @staticmethod
     def _canvas_window(batch):
@@ -313,6 +340,24 @@ class Store:
             for item in batch["records"]:
                 record_id = item["id"]
                 incoming.add(record_id)
+                if kind == "message" and source == "apple-local":
+                    previous = self.get(kind, record_id, include_deleted=True)
+                    if previous:
+                        payload = dict(item.get("payload", {}))
+                        old_payload = previous.get("payload", {})
+                        old_attachments = old_payload.get("attachments", [])
+                        current_attachments = payload.get("attachments", [])
+                        known = {a.get("guid") for a in current_attachments if a.get("guid")}
+                        retained = [a for a in old_attachments if a.get("guid") and a.get("guid") not in known]
+                        if retained:
+                            payload["attachments"] = current_attachments + retained
+                            payload["attachmentsIncludePreviousLocalCopy"] = True
+                        body = item.get("body", "")
+                        if not payload.get("contentAvailable") and (old_payload.get("contentAvailable") or old_payload.get("contentSource") == "archived_previous_local_copy"):
+                            payload["text"] = old_payload.get("text", "")
+                            payload["contentSource"] = "archived_previous_local_copy"
+                            body = "\n".join(x for x in (body, payload["text"]) if x)
+                        item = dict(item, body=body, payload=payload)
                 if kind == "voice_memo" and not item.get("body", "").strip() and not item.get("payload", {}).get("audio_sha256"):
                     # iCloud can evict the local audio. Keep archived text explicitly
                     # historical instead of replacing a full transcript with empty text.
@@ -380,7 +425,16 @@ class Store:
                         VALUES(?,?,?,?,?)
                     """, ((kind, record_id, identifier, role, int(group))
                           for identifier, role, group in correspondence_identifiers(kind, item.get("payload", {}))))
-            if batch["complete"] or window is not None:
+            if kind == "message" and source == "apple-local" and batch["complete"]:
+                existing = self.db.execute(
+                    "SELECT id FROM records WHERE source=? AND kind=? AND scope=? AND deleted=0",
+                    (source, kind, scope)).fetchall()
+                self.db.executemany("DELETE FROM message_source_absences WHERE id=?",
+                                    ((record_id,) for record_id in incoming))
+                self.db.executemany(
+                    "INSERT OR IGNORE INTO message_source_absences(id,observed_at) VALUES(?,?)",
+                    ((row["id"], timestamp) for row in existing if row["id"] not in incoming))
+            if (batch["complete"] or window is not None) and not (kind == "message" and source == "apple-local"):
                 existing = self.db.execute("SELECT id,start FROM records WHERE source=? AND kind=? AND scope=? AND deleted=0",
                                            (source, kind, scope)).fetchall()
                 retired_ids = []

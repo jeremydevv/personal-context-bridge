@@ -88,7 +88,7 @@ class MacAppLifecycleTests(unittest.TestCase):
         cleanup = calls[-1][-1]
         self.assertIn("quit()", cleanup)
         self.assertIn("outgoingMessages", cleanup)
-        self.assertIn("frontmost", cleanup)
+        self.assertNotIn("frontmost", cleanup)
 
     def test_delayed_quit_is_polled_and_user_activity_stops_retries(self):
         for outcomes in (

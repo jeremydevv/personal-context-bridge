@@ -33,12 +33,12 @@ class LifecycleReceiptTests(unittest.TestCase):
         self.assertTrue(receipt['launched_by_collector'])
         self.assertEqual(receipt['cleanup'],'closed')
         self.assertFalse(receipt['final_running'])
-    def test_user_foreground_or_composition_preserved(self):
+    def test_composition_preserved(self):
         receipt,calls=self.exercise(preserved=True)
         self.assertEqual(receipt['cleanup'],'preserved_for_user')
         self.assertTrue(receipt['final_running'])
         script=next(c[-1] for c in calls if 'quit()' in c[-1])
-        self.assertIn('frontmost()',script)
+        self.assertNotIn('frontmost()',script)
         self.assertIn('outgoingMessages()',script)
     def test_collection_error_still_closes_owned_app(self):
         receipt,_=self.exercise(fail=True)

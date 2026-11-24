@@ -72,24 +72,32 @@ def collected_app(name, command="/usr/bin/osascript"):
                         wait_for_mail_idle()
                         # Preserve composition and a user who brought Mail forward.
                         condition += " && !app.frontmost() && app.outgoingMessages().length === 0"
-                    cleanup = subprocess.run(
-                        [command, "-l", "JavaScript", "-e",
-                         'const app = ' + app + '; const wasRunning = app.running(); '
-                         'const permitted = (' + condition + '); if (permitted) app.quit(); '
-                         'JSON.stringify({final_running: app.running(), cleanup: '
-                         '(!wasRunning || permitted) ? "closed" : "preserved_for_user"})'],
-                        capture_output=True, text=True, timeout=30)
-                    if cleanup.returncode:
-                        raise RuntimeError("Could not close " + name + " after collection")
-                    try:
-                        details = json.loads(cleanup.stdout)
-                        if isinstance(details, dict) and isinstance(details.get('final_running'), bool) and details.get('cleanup') in ('closed','preserved_for_user'):
-                            receipt.update(details)
-                            if details['cleanup'] == 'closed' and details['final_running']:
-                                receipt['cleanup'] = 'failed'
-                        else: receipt['cleanup'] = 'failed'
-                    except (ValueError, TypeError):
+                    # Quit can return before the process exits. Recheck ownership
+                    # and user activity on every attempt, while holding the lock.
+                    for attempt in range(10):
+                        cleanup = subprocess.run(
+                            [command, "-l", "JavaScript", "-e",
+                             'const app = ' + app + '; const wasRunning = app.running(); '
+                             'const permitted = (' + condition + '); if (permitted) app.quit(); '
+                             'JSON.stringify({final_running: app.running(), cleanup: '
+                             '(!wasRunning || permitted) ? "closed" : "preserved_for_user"})'],
+                            capture_output=True, text=True, timeout=30)
+                        if cleanup.returncode:
+                            raise RuntimeError("Could not close " + name + " after collection")
+                        try:
+                            details = json.loads(cleanup.stdout)
+                            if not isinstance(details, dict) or not isinstance(details.get('final_running'), bool) or details.get('cleanup') not in ('closed', 'preserved_for_user'):
+                                raise ValueError('invalid cleanup response')
+                        except (ValueError, TypeError):
+                            raise RuntimeError("Cannot verify " + name + " cleanup")
+                        receipt.update(details)
+                        if not details['final_running'] or details['cleanup'] == 'preserved_for_user':
+                            break
+                        if attempt < 9:
+                            time.sleep(1)
+                    else:
                         receipt['cleanup'] = 'failed'
+                        raise RuntimeError(name + " remained open after cleanup")
                 except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
                     receipt['cleanup'] = 'failed'
                     if original_error is None:

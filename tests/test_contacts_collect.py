@@ -42,7 +42,7 @@ class ContactsCollectorTests(unittest.TestCase):
                             script = args[-1]
                             if "quit()" in script:
                                 state["running"] = False
-                                return subprocess.CompletedProcess(args, 0, "", "")
+                                return subprocess.CompletedProcess(args, 0, json.dumps({'final_running': False, 'cleanup': 'closed'}), "")
                             return subprocess.CompletedProcess(args, 0,
                                                                str(state["running"]).lower(), "")
                         state["running"] = True

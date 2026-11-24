@@ -1,3 +1,4 @@
+import json
 import subprocess
 import tempfile
 import unittest
@@ -16,7 +17,7 @@ class MacAppLifecycleTests(unittest.TestCase):
                 return subprocess.CompletedProcess(args, 0, "", "")
             if "quit()" in args[-1]:
                 state["running"] = False
-                return subprocess.CompletedProcess(args, 0, "", "")
+                return subprocess.CompletedProcess(args, 0, json.dumps({'final_running': False, 'cleanup': 'closed'}), "")
             if state["launched"]:
                 state["ready_probes"] += 1
                 state["running"] = state["ready_probes"] >= 2
@@ -88,3 +89,45 @@ class MacAppLifecycleTests(unittest.TestCase):
         self.assertIn("quit()", cleanup)
         self.assertIn("outgoingMessages", cleanup)
         self.assertIn("frontmost", cleanup)
+
+    def test_delayed_quit_is_polled_and_user_activity_stops_retries(self):
+        for outcomes in (
+            [{'final_running': True, 'cleanup': 'closed'}, {'final_running': False, 'cleanup': 'closed'}],
+            [{'final_running': True, 'cleanup': 'closed'}, {'final_running': True, 'cleanup': 'preserved_for_user'}],
+        ):
+            with self.subTest(outcomes=outcomes), tempfile.TemporaryDirectory() as directory:
+                state = {'running': False, 'attempts': 0}
+                def boundary(args, **kwargs):
+                    if args[0] == '/usr/bin/open':
+                        state['running'] = True
+                        output = ''
+                    elif 'quit()' in args[-1]:
+                        output = json.dumps(outcomes[state['attempts']])
+                        state['attempts'] += 1
+                    else:
+                        output = str(state['running']).lower()
+                    return subprocess.CompletedProcess(args, 0, output, '')
+                with patch.dict('os.environ', {'PERSONAL_CONTEXT_DATA_DIR': directory}), patch('personal_context.mac_app_lifecycle.subprocess.run', side_effect=boundary), patch('personal_context.mail_collect.wait_for_mail_idle'), patch('time.sleep'):
+                    with collected_app('Mail') as receipt:
+                        pass
+                self.assertEqual(state['attempts'], 2)
+                self.assertEqual(receipt['cleanup'], outcomes[-1]['cleanup'])
+
+    def test_never_closing_is_reported_as_failure(self):
+        state = {'running': False, 'attempts': 0}
+        def boundary(args, **kwargs):
+            if args[0] == '/usr/bin/open':
+                state['running'] = True
+                output = ''
+            elif 'quit()' in args[-1]:
+                state['attempts'] += 1
+                output = json.dumps({'final_running': True, 'cleanup': 'closed'})
+            else:
+                output = str(state['running']).lower()
+            return subprocess.CompletedProcess(args, 0, output, '')
+        with tempfile.TemporaryDirectory() as directory, patch.dict('os.environ', {'PERSONAL_CONTEXT_DATA_DIR': directory}), patch('personal_context.mac_app_lifecycle.subprocess.run', side_effect=boundary), patch('personal_context.mail_collect.wait_for_mail_idle'), patch('time.sleep'):
+            with self.assertRaisesRegex(RuntimeError, 'remained open'):
+                with collected_app('Mail') as receipt:
+                    pass
+        self.assertEqual(state['attempts'], 10)
+        self.assertEqual(receipt['cleanup'], 'failed')

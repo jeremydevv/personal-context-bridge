@@ -68,10 +68,11 @@ def collected_app(name, command="/usr/bin/osascript"):
                 try:
                     condition = "app.running()"
                     if name == "Mail":
-                        from .mail_collect import wait_for_mail_idle
-                        wait_for_mail_idle()
-                        # Preserve composition and a user who brought Mail forward.
-                        condition += " && !app.frontmost() && app.outgoingMessages().length === 0"
+                        # Replica quiescence gates the snapshot, not shutdown.
+                        # Still attempt a graceful quit if that wait failed.
+                        # The owner permits closing collector-opened Mail even if
+                        # it became frontmost; never interrupt a composition.
+                        condition += " && app.outgoingMessages().length === 0"
                     # Quit can return before the process exits. Recheck ownership
                     # and user activity on every attempt, while holding the lock.
                     for attempt in range(10):

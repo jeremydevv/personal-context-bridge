@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 import io
 import json
 import tempfile
@@ -124,6 +125,46 @@ class CliSecurityTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "key"):
                     main(["ingest-stdin", "--db", str(database)])
             self.assertFalse(database.exists())
+
+    def test_mail_fetch_releases_gui_before_sqlite_and_archive_io(self):
+        for action, read in (("mail-sync", "export_mailbox"),
+                             ("mail-fast-sync", "recent_mailbox")):
+            with self.subTest(action=action), tempfile.TemporaryDirectory() as directory:
+                config = Path(directory) / "config.json"
+                config.write_text(json.dumps({
+                    "calendar_ids": [], "reminder_ids": [], "all_mailboxes": True,
+                    "remote_host": "archive-server", "remote_project": "/tmp/context",
+                    "spool_dir": str(Path(directory) / "spool"),
+                }))
+                phases = []
+                mailbox = {"mailboxUrl": "synthetic://mailbox"}
+
+                @contextmanager
+                def app(name):
+                    self.assertEqual(name, "Mail")
+                    phases.append("launch")
+                    yield {}
+                    phases.append("quit")
+
+                def local_io(phase, result=None):
+                    self.assertEqual(phases[:4], ["launch", "fetch", "settle", "quit"])
+                    phases.append(phase)
+                    return result
+
+                with patch("personal_context.cli.collected_app", side_effect=app), \
+                     patch("personal_context.cli.request_mail_refresh",
+                           side_effect=lambda: phases.append("fetch")), \
+                     patch("personal_context.cli.wait_for_mail_idle",
+                           side_effect=lambda: phases.append("settle")), \
+                     patch("personal_context.cli.list_mailboxes",
+                           side_effect=lambda: local_io("list", [mailbox])), \
+                     patch("personal_context.cli." + read,
+                           side_effect=lambda *a, **kw: local_io("read", ([], 0))), \
+                     patch("personal_context.cli.Spool.flush",
+                           side_effect=lambda deliver: local_io("upload")), \
+                     patch("sys.stdout", new_callable=io.StringIO):
+                    self.assertEqual(main([action, "--config", str(config)]), 0)
+                self.assertEqual(phases[4:7], ["list", "upload", "read"])
 
     def test_mail_snapshot_uses_bounded_retryable_envelopes(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -68,8 +68,8 @@ def collected_app(name, command="/usr/bin/osascript"):
                 try:
                     condition = "app.running()"
                     if name == "Mail":
-                        from .mail_collect import wait_for_mail_idle
-                        wait_for_mail_idle()
+                        # Replica quiescence gates the snapshot, not shutdown.
+                        # Still attempt a graceful quit if that wait failed.
                         # The owner permits closing collector-opened Mail even if
                         # it became frontmost; never interrupt a composition.
                         condition += " && app.outgoingMessages().length === 0"

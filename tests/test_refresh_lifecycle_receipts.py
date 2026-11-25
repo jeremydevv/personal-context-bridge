@@ -16,10 +16,11 @@ class LifecycleReceiptTests(unittest.TestCase):
                 out=json.dumps({'final_running':preserved,'cleanup':'preserved_for_user' if preserved else 'closed'})
             else:out=str(state['running']).lower()
             return subprocess.CompletedProcess(args,0,out,'')
-        with tempfile.TemporaryDirectory() as root,patch.dict('os.environ',{'PERSONAL_CONTEXT_DATA_DIR':root}),patch('personal_context.mac_app_lifecycle.subprocess.run',side_effect=run),patch('personal_context.mail_collect.wait_for_mail_idle'):
+        with tempfile.TemporaryDirectory() as root,patch.dict('os.environ',{'PERSONAL_CONTEXT_DATA_DIR':root}),patch('personal_context.mac_app_lifecycle.subprocess.run',side_effect=run),patch('personal_context.mail_collect.wait_for_mail_idle',
+                                side_effect=RuntimeError('Mail replica busy')) as settle:
             if fail:
-                with self.assertRaisesRegex(RuntimeError,'fixture'):
-                    with collected_app('Mail') as receipt:raise RuntimeError('fixture')
+                with self.assertRaisesRegex(RuntimeError,'Mail replica busy'):
+                    with collected_app('Mail') as receipt: settle()
             else:
                 with collected_app('Mail') as receipt:pass
         return receipt,calls
@@ -40,6 +41,6 @@ class LifecycleReceiptTests(unittest.TestCase):
         script=next(c[-1] for c in calls if 'quit()' in c[-1])
         self.assertNotIn('frontmost()',script)
         self.assertIn('outgoingMessages()',script)
-    def test_collection_error_still_closes_owned_app(self):
+    def test_busy_replica_still_closes_owned_app(self):
         receipt,_=self.exercise(fail=True)
         self.assertEqual(receipt['cleanup'],'closed')
